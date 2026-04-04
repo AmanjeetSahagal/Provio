@@ -1,0 +1,5 @@
+{
+  "name": "Provio",
+  "description": "AI-assisted operations system for modern food pantries",
+  "requestFramePermissions": ["microphone", "camera"]
+}

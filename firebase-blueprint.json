@@ -1,0 +1,79 @@
+{
+  "entities": {
+    "Item": {
+      "title": "Item",
+      "description": "Inventory item in the pantry",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "category": { "type": "string" },
+        "unit": { "type": "string" },
+        "vendor": { "type": "string" },
+        "pantry_quantity": { "type": "number" },
+        "grocery_quantity": { "type": "number" },
+        "created_at": { "type": "string", "format": "date-time" },
+        "updated_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "category", "unit", "pantry_quantity", "grocery_quantity", "created_at", "updated_at"]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "Log of inventory changes",
+      "type": "object",
+      "properties": {
+        "item_id": { "type": "string" },
+        "type": { "type": "string", "enum": ["add", "transfer", "invoice", "rollover", "checkpoint"] },
+        "quantity": { "type": "number" },
+        "from_program": { "type": "string" },
+        "to_program": { "type": "string" },
+        "vendor": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "notes": { "type": "string" }
+      },
+      "required": ["item_id", "type", "quantity", "timestamp"]
+    },
+    "Invoice": {
+      "title": "Invoice",
+      "description": "Uploaded invoice data",
+      "type": "object",
+      "properties": {
+        "vendor": { "type": "string" },
+        "date": { "type": "string", "format": "date-time" },
+        "items": { "type": "array", "items": { "type": "object" } },
+        "raw_text": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["vendor", "date", "created_at"]
+    },
+    "Checkpoint": {
+      "title": "Checkpoint",
+      "description": "Baseline inventory snapshot",
+      "type": "object",
+      "properties": {
+        "created_at": { "type": "string", "format": "date-time" },
+        "baseline_items": { "type": "array", "items": { "type": "object" } }
+      },
+      "required": ["created_at", "baseline_items"]
+    },
+    "Alert": {
+      "title": "Alert",
+      "description": "System alert (e.g., low stock)",
+      "type": "object",
+      "properties": {
+        "item_id": { "type": "string" },
+        "type": { "type": "string" },
+        "message": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" },
+        "resolved": { "type": "boolean" }
+      },
+      "required": ["item_id", "type", "message", "created_at", "resolved"]
+    }
+  },
+  "firestore": {
+    "/items/{itemId}": { "schema": { "$ref": "#/entities/Item" }, "description": "Inventory items" },
+    "/transactions/{transactionId}": { "schema": { "$ref": "#/entities/Transaction" }, "description": "Inventory transactions" },
+    "/invoices/{invoiceId}": { "schema": { "$ref": "#/entities/Invoice" }, "description": "Invoices" },
+    "/checkpoints/{checkpointId}": { "schema": { "$ref": "#/entities/Checkpoint" }, "description": "Inventory checkpoints" },
+    "/alerts/{alertId}": { "schema": { "$ref": "#/entities/Alert" }, "description": "System alerts" }
+  }
+}
