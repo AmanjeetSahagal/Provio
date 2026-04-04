@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import {
   Package,
@@ -50,8 +51,42 @@ const impactStats = [
 ];
 
 function Login() {
+  const [loginError, setLoginError] = useState('');
+
   const scrollToInfo = () => {
     document.getElementById('system-info')?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  const handleLogin = async () => {
+    setLoginError('');
+
+    try {
+      await loginWithGoogle();
+    } catch (error) {
+      const code = typeof error === 'object' && error && 'code' in error ? String(error.code) : '';
+
+      if (code === 'auth/popup-blocked') {
+        setLoginError('Popup blocked. Allow popups for this site and try again.');
+        return;
+      }
+
+      if (code === 'auth/unauthorized-domain') {
+        setLoginError('This domain is not authorized in Firebase Auth. Use localhost or add the current host in Firebase console.');
+        return;
+      }
+
+      if (code === 'auth/operation-not-allowed') {
+        setLoginError('Google sign-in is not enabled for this Firebase project.');
+        return;
+      }
+
+      if (code === 'auth/popup-closed-by-user') {
+        setLoginError('Google sign-in popup was closed before completing login.');
+        return;
+      }
+
+      setLoginError('Google sign-in failed. Check Firebase Auth setup and browser console for details.');
+    }
   };
 
   return (
@@ -108,11 +143,17 @@ function Login() {
             </div>
 
             <button
-              onClick={loginWithGoogle}
+              onClick={handleLogin}
               className="w-full max-w-sm bg-vt-maroon text-vt-cream border-4 border-vt-ink py-4 px-6 font-mono font-bold text-lg hover:bg-vt-maroon-dark active:translate-y-2 active:shadow-none shadow-[8px_8px_0px_0px_#1A1516] transition-all flex items-center justify-center gap-3"
             >
               LOG IN WITH GOOGLE
             </button>
+            {loginError ? (
+              <div className="w-full max-w-sm mt-4 border-4 border-vt-ink bg-red-200 text-vt-ink px-4 py-3 text-left shadow-[4px_4px_0px_0px_#861F41]">
+                <p className="font-mono text-xs font-bold uppercase tracking-widest mb-1">Auth Error</p>
+                <p className="font-sans text-sm font-medium">{loginError}</p>
+              </div>
+            ) : null}
           </div>
         </div>
 
