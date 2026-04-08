@@ -3,6 +3,7 @@ import { collection, onSnapshot, doc, updateDoc, addDoc } from 'firebase/firesto
 import { db } from '../firebase';
 import { ArrowRightLeft, Search } from 'lucide-react';
 import { InventoryItem } from '../types';
+import { syncLowStockAlert } from '../services/alerts';
 
 export default function Transfers() {
  const [items, setItems] = useState<InventoryItem[]>([]);
@@ -36,14 +37,24 @@ export default function Transfers() {
 
  try {
  const itemRef = doc(db, 'items', selectedItem.id);
- await updateDoc(itemRef, {
- pantry_quantity: isP2G 
+ const nextPantryQty = isP2G 
  ? selectedItem.pantry_quantity - transferAmount 
- : selectedItem.pantry_quantity + transferAmount,
- grocery_quantity: isP2G 
+ : selectedItem.pantry_quantity + transferAmount;
+ const nextGroceryQty = isP2G 
  ? selectedItem.grocery_quantity + transferAmount 
- : selectedItem.grocery_quantity - transferAmount,
+ : selectedItem.grocery_quantity - transferAmount;
+ await updateDoc(itemRef, {
+ pantry_quantity: nextPantryQty,
+ grocery_quantity: nextGroceryQty,
  updated_at: new Date().toISOString()
+ });
+
+ await syncLowStockAlert({
+ itemId: selectedItem.id,
+ itemName: selectedItem.name,
+ pantryQuantity: nextPantryQty,
+ groceryQuantity: nextGroceryQty,
+ threshold: selectedItem.low_stock_threshold,
  });
 
  await addDoc(collection(db, 'transactions'), {

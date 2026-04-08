@@ -49,13 +49,13 @@ export default function Layout({ children }: { children: ReactNode }) {
  })}
  </nav>
 
- <div className="p-6 border-t-4 border-vt-ink space-y-4 bg-vt-cream ">
+ <div className="p-6 border-t-4 border-vt-ink bg-vt-cream">
  <button
  onClick={logout}
- className="flex items-center gap-3 px-4 py-3 w-full font-mono font-bold text-sm uppercase tracking-wider border-2 border-vt-ink bg-red-500 text-vt-cream hover:bg-red-600 hover:shadow-[4px_4px_0px_0px_#1A1516] hover:-translate-y-1 transition-all"
+ className="flex items-center gap-4 px-4 py-3 w-full font-mono font-bold text-sm uppercase tracking-wider transition-all border-2 border-vt-ink bg-vt-orange text-vt-ink shadow-[4px_4px_0px_0px_#861F41] hover:shadow-[4px_4px_0px_0px_#1A1516] hover:-translate-y-1"
  >
- <LogOut size={18} />
- LOG OUT
+ <LogOut size={20} />
+ Log Out
  </button>
  </div>
  </aside>

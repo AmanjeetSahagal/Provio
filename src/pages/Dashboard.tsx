@@ -1,38 +1,46 @@
 import { useState, useEffect } from 'react';
-import { collection, onSnapshot, query, orderBy, limit } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy, limit, where } from 'firebase/firestore';
 import { db } from '../firebase';
-import { AlertTriangle, Package, ArrowRightLeft, TrendingUp } from 'lucide-react';
+import { AlertTriangle, TrendingUp, ArrowRightLeft } from 'lucide-react';
 import { format } from 'date-fns';
-import { TransactionRecord } from '../types';
+import { AlertRecord, InventoryItem, TransactionRecord } from '../types';
 
 export default function Dashboard() {
- const [stats, setStats] = useState({ totalItems: 0, lowStock: 0, recentTransfers: 0 });
+ const [categoryTotals, setCategoryTotals] = useState<Array<{ category: string; total: number }>>([]);
  const [recentTransactions, setRecentTransactions] = useState<TransactionRecord[]>([]);
+ const [alerts, setAlerts] = useState<AlertRecord[]>([]);
 
  useEffect(() => {
  const itemsUnsub = onSnapshot(collection(db, 'items'), (snapshot) => {
- let total = 0;
- let low = 0;
- snapshot.forEach((doc) => {
- const data = doc.data();
- total += (data.pantry_quantity || 0) + (data.grocery_quantity || 0);
- if ((data.pantry_quantity || 0) + (data.grocery_quantity || 0) < 10) {
- low++;
- }
+ const totalsByCategory = new Map<string, number>();
+ snapshot.docs.forEach((doc) => {
+ const data = doc.data() as InventoryItem;
+ const total = Number(data.pantry_quantity || 0) + Number(data.grocery_quantity || 0);
+ const category = data.category || 'Uncategorized';
+ totalsByCategory.set(category, (totalsByCategory.get(category) || 0) + total);
  });
- setStats(s => ({ ...s, totalItems: total, lowStock: low }));
+ setCategoryTotals(
+ Array.from(totalsByCategory.entries())
+ .map(([category, total]) => ({ category, total }))
+ .sort((a, b) => b.total - a.total),
+ );
  });
 
  const txQuery = query(collection(db, 'transactions'), orderBy('timestamp', 'desc'), limit(5));
  const txUnsub = onSnapshot(txQuery, (snapshot) => {
  const txs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as TransactionRecord));
  setRecentTransactions(txs);
- setStats(s => ({ ...s, recentTransfers: txs.filter(t => t.type === 'transfer').length }));
+ });
+
+ const alertsQuery = query(collection(db, 'alerts'), where('resolved', '==', false), orderBy('created_at', 'desc'));
+ const alertsUnsub = onSnapshot(alertsQuery, (snapshot) => {
+ setAlerts(snapshot.docs.map((alert) => ({ id: alert.id, ...alert.data() } as AlertRecord)));
  });
 
  return () => {
  itemsUnsub();
  txUnsub();
+ alertsUnsub();
  };
  }, []);
 
@@ -40,46 +48,58 @@ export default function Dashboard() {
  <div className="space-y-10">
  <div className="border-b-4 border-vt-ink pb-6">
  <h1 className="font-serif text-5xl font-bold text-vt-ink uppercase tracking-tight">Dashboard</h1>
- <p className="font-mono text-gray-600 mt-3 text-lg uppercase tracking-widest">System Overview</p>
+ <p className="font-mono text-gray-600 mt-3 text-lg uppercase tracking-widest">Today&apos;s overview</p>
  </div>
  
- <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
- {/* Brutalist Card 1 */}
- <div className="bg-vt-cream p-6 border-4 border-vt-ink shadow-[8px_8px_0px_0px_#861F41] flex flex-col gap-4 hover:-translate-y-1 transition-transform">
- <div className="flex justify-between items-start border-b-2 border-vt-ink pb-4">
- <p className="font-mono text-sm font-bold uppercase tracking-widest text-vt-ink ">Total Items</p>
- <Package className="text-vt-maroon " size={24} />
+ <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 items-stretch">
+ <div className="bg-vt-cream border-4 border-vt-ink shadow-[8px_8px_0px_0px_#861F41] h-full p-6 space-y-5">
+ <div className="border-b-2 border-vt-ink pb-4">
+ <h2 className="font-serif text-2xl font-bold text-vt-ink uppercase tracking-wide">Stock By Category</h2>
  </div>
+ <div className="space-y-4">
+ {categoryTotals.length === 0 ? (
+ <div className="border-2 border-vt-ink bg-white px-4 py-5 text-center font-mono text-sm font-bold uppercase tracking-widest text-gray-500">
+ No inventory yet.
+ </div>
+ ) : (
+ categoryTotals.slice(0, 6).map(({ category, total }) => (
+ <div key={category} className="flex items-center justify-between gap-4 border-2 border-vt-ink bg-white px-4 py-4">
+ <span className="font-sans font-bold text-vt-ink">{category}</span>
+ <span className="font-mono text-xl font-bold text-vt-maroon">{total}</span>
+ </div>
+ ))
+ )}
+ </div>
+ </div>
+ <div className="bg-vt-cream border-4 border-vt-ink shadow-[8px_8px_0px_0px_#E87722] h-full p-6 space-y-5">
+ <div className="border-b-2 border-vt-ink pb-4">
+ <h2 className="font-serif text-2xl font-bold text-vt-ink uppercase tracking-wide">Restock Notices</h2>
+ </div>
+ <div className="space-y-4">
+ {alerts.length === 0 ? (
+ <div className="border-2 border-vt-ink bg-white px-4 py-5 text-center font-mono text-sm font-bold uppercase tracking-widest text-gray-500">
+ No items need attention right now.
+ </div>
+ ) : (
+ alerts.slice(0, 6).map((alert) => (
+ <div key={alert.id} className="border-2 border-vt-ink bg-white px-4 py-4">
+ <div className="flex items-start gap-4">
+ <AlertTriangle className="text-vt-orange shrink-0 mt-1" size={22} />
  <div>
- <p className="font-mono text-5xl font-bold text-vt-ink ">{stats.totalItems}</p>
+ <p className="font-sans text-base font-bold text-vt-ink">{alert.message}</p>
+ <p className="font-mono text-xs text-gray-500 uppercase tracking-widest mt-2">{format(new Date(alert.created_at), 'yyyy-MM-dd HH:mm')}</p>
+ <p className="font-sans text-sm text-gray-600 mt-2">This notice clears automatically after the item is restocked.</p>
  </div>
  </div>
- 
- {/* Brutalist Card 2 */}
- <div className="bg-vt-cream p-6 border-4 border-vt-ink shadow-[8px_8px_0px_0px_#E87722] flex flex-col gap-4 hover:-translate-y-1 transition-transform">
- <div className="flex justify-between items-start border-b-2 border-vt-ink pb-4">
- <p className="font-mono text-sm font-bold uppercase tracking-widest text-vt-ink ">Low Stock</p>
- <AlertTriangle className="text-vt-orange " size={24} />
  </div>
- <div>
- <p className="font-mono text-5xl font-bold text-vt-ink ">{stats.lowStock}</p>
- </div>
- </div>
-
- {/* Brutalist Card 3 */}
- <div className="bg-vt-cream p-6 border-4 border-vt-ink shadow-[8px_8px_0px_0px_#1A1516] flex flex-col gap-4 hover:-translate-y-1 transition-transform">
- <div className="flex justify-between items-start border-b-2 border-vt-ink pb-4">
- <p className="font-mono text-sm font-bold uppercase tracking-widest text-vt-ink ">Transfers</p>
- <ArrowRightLeft className="text-vt-ink " size={24} />
- </div>
- <div>
- <p className="font-mono text-5xl font-bold text-vt-ink ">{stats.recentTransfers}</p>
+ ))
+ )}
  </div>
  </div>
  </div>
 
  {/* Activity Brutalist Panel */}
- <div className="bg-vt-cream border-4 border-vt-ink shadow-[12px_12px_0px_0px_#861F41] ">
+ <div className="bg-vt-cream border-4 border-vt-ink shadow-[12px_12px_0px_0px_#1A1516] ">
  <div className="p-6 border-b-4 border-vt-ink bg-vt-maroon ">
  <h2 className="font-serif text-2xl font-bold text-vt-cream uppercase tracking-wide">Recent Activity Log</h2>
  </div>
@@ -99,11 +119,13 @@ export default function Dashboard() {
  </div>
  <div>
  <p className="font-sans text-xl font-bold text-vt-ink uppercase">
- {tx.type} <span className="font-mono text-vt-maroon ">[{tx.quantity} units]</span>
+ {tx.type === 'rollover' ? 'year-end rollover' : tx.type} <span className="font-mono text-vt-maroon ">[{tx.quantity} units]</span>
  </p>
  <p className="font-mono text-sm text-gray-600 mt-1 uppercase">
- {tx.type === 'transfer' 
+ {tx.type === 'transfer'
  ? `Path: ${tx.from_program} -> ${tx.to_program}`
+ : tx.type === 'rollover'
+ ? tx.notes || 'Carry-forward baseline recorded'
  : `Dest: ${tx.to_program || 'inventory'}`}
  </p>
  </div>

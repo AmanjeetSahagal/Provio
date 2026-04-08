@@ -1,157 +1,507 @@
 import { useState } from 'react';
-import { parseInventoryText } from '../services/gemini';
-import { addDoc, collection } from 'firebase/firestore';
+import { addDoc, collection, doc, getDocs, updateDoc } from 'firebase/firestore';
+import { Camera, Mic, Send, CheckCircle2, Loader2, FileText, Upload, Sparkles } from 'lucide-react';
 import { db } from '../firebase';
-import { Camera, Mic, Send, CheckCircle2, Loader2, Cpu } from 'lucide-react';
-import { ParsedInventoryItem } from '../types';
+import { parseInventoryText, parseInvoiceInput } from '../services/gemini';
+import { InventoryItem, InvoiceLineItem, ParsedInventoryItem } from '../types';
+import { syncLowStockAlert } from '../services/alerts';
+
+type IntakeMode = 'text' | 'invoice';
+
+type UploadFile = {
+  name: string;
+  mimeType: string;
+  data: string;
+  previewUrl: string;
+};
+
+const today = new Date().toISOString().slice(0, 10);
+
+function fileToBase64(file: File): Promise<UploadFile> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = typeof reader.result === 'string' ? reader.result : '';
+      const base64 = result.includes(',') ? result.split(',')[1] : result;
+      resolve({
+        name: file.name,
+        mimeType: file.type || 'application/octet-stream',
+        data: base64,
+        previewUrl: result,
+      });
+    };
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
 
 export default function SmartIntake() {
- const [input, setInput] = useState('');
- const [isProcessing, setIsProcessing] = useState(false);
- const [parsedItems, setParsedItems] = useState<ParsedInventoryItem[]>([]);
- const [isSaved, setIsSaved] = useState(false);
+  const [mode, setMode] = useState<IntakeMode>('invoice');
+  const [input, setInput] = useState('');
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [parsedItems, setParsedItems] = useState<ParsedInventoryItem[]>([]);
+  const [isSaved, setIsSaved] = useState(false);
+  const [statusMessage, setStatusMessage] = useState('');
 
- const handleProcess = async () => {
- if (!input.trim()) return;
- setIsProcessing(true);
- setIsSaved(false);
- try {
- const items = await parseInventoryText(input);
- setParsedItems(items);
- } catch (error) {
- alert("Failed to process text. Please try again.");
- } finally {
- setIsProcessing(false);
- }
- };
+  const [invoiceVendor, setInvoiceVendor] = useState('');
+  const [invoiceDate, setInvoiceDate] = useState(today);
+  const [invoiceDefaultProgram, setInvoiceDefaultProgram] = useState<'pantry' | 'grocery'>('pantry');
+  const [invoiceText, setInvoiceText] = useState('');
+  const [invoiceFile, setInvoiceFile] = useState<UploadFile | null>(null);
+  const [invoiceStatus, setInvoiceStatus] = useState<'idle' | 'loaded' | 'parsing' | 'parsed'>('idle');
 
- const handleSave = async () => {
- setIsProcessing(true);
- try {
- for (const item of parsedItems) {
- const isPantry = item.program?.toLowerCase() === 'pantry';
- 
- const docRef = await addDoc(collection(db, 'items'), {
- name: item.name,
- category: item.category || 'Uncategorized',
- unit: item.unit || 'items',
- pantry_quantity: isPantry ? Number(item.quantity) : 0,
- grocery_quantity: !isPantry ? Number(item.quantity) : 0,
- created_at: new Date().toISOString(),
- updated_at: new Date().toISOString(),
- });
+  const resetFeedback = () => {
+    setIsSaved(false);
+    setStatusMessage('');
+  };
 
- await addDoc(collection(db, 'transactions'), {
- item_id: docRef.id,
- type: 'add',
- quantity: Number(item.quantity),
- to_program: item.program || 'pantry',
- timestamp: new Date().toISOString(),
- notes: 'Added via Smart Intake'
- });
- }
- setIsSaved(true);
- setParsedItems([]);
- setInput('');
- } catch (error) {
- alert("Failed to save items.");
- } finally {
- setIsProcessing(false);
- }
- };
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
 
- return (
- <div className="space-y-10 max-w-5xl mx-auto">
- <div className="border-b-4 border-vt-ink pb-6 flex flex-col md:flex-row md:items-end justify-between gap-6">
- <div>
- <div className="inline-flex items-center justify-center p-3 bg-vt-ink border-4 border-vt-ink mb-6 shadow-[4px_4px_0px_0px_#861F41] ">
- <Cpu className="text-vt-cream " size={36} />
- </div>
- <h1 className="font-serif text-5xl font-bold text-vt-ink uppercase tracking-tight">Smart Intake</h1>
- <p className="font-mono text-gray-600 mt-3 text-lg uppercase tracking-widest">AI Parsing Module</p>
- </div>
- </div>
+    resetFeedback();
 
- <div className="bg-vt-cream border-4 border-vt-ink p-8 shadow-[12px_12px_0px_0px_#861F41] space-y-8">
- 
- <div className="flex flex-col sm:flex-row gap-6">
- <button className="flex-1 py-5 bg-vt-cream border-4 border-vt-ink hover:bg-vt-orange text-vt-ink hover:text-vt-ink flex items-center justify-center gap-4 font-mono font-bold text-lg uppercase tracking-wider transition-all shadow-[6px_6px_0px_0px_#1A1516] hover:-translate-y-1">
- <Mic size={28} /> Voice Input
- </button>
- <button className="flex-1 py-5 bg-vt-cream border-4 border-vt-ink hover:bg-vt-maroon text-vt-ink hover:text-vt-cream flex items-center justify-center gap-4 font-mono font-bold text-lg uppercase tracking-wider transition-all shadow-[6px_6px_0px_0px_#1A1516] hover:-translate-y-1">
- <Camera size={28} /> Scan Invoice
- </button>
- </div>
+    try {
+      const prepared = await fileToBase64(file);
+      setInvoiceFile(prepared);
+      setInvoiceStatus('loaded');
+      if (!invoiceText.trim()) {
+        setStatusMessage(`Loaded ${file.name}. You can parse directly or add notes in the invoice text box.`);
+      }
+    } catch (error) {
+      console.error('Error loading file:', error);
+      setStatusMessage('Failed to read invoice file.');
+    }
+  };
 
- <div className="relative">
- <div className="absolute top-0 left-0 bg-vt-ink text-vt-cream font-mono text-xs font-bold uppercase tracking-widest px-4 py-2 border-b-4 border-r-4 border-vt-ink z-10">
- RAW INPUT BUFFER
- </div>
- <textarea
- value={input}
- onChange={(e) => setInput(e.target.value)}
- placeholder="E.g., 'We received 50 cans of soup for the pantry and 20 boxes of cereal for grocery.'"
- className="w-full h-64 p-8 pt-16 bg-vt-cream border-4 border-vt-ink focus:ring-4 focus:ring-vt-orange outline-none resize-none font-sans text-2xl text-vt-ink placeholder-gray-400 shadow-inner"
- />
- <button 
- onClick={handleProcess}
- disabled={isProcessing || !input.trim()}
- className="absolute bottom-6 right-6 bg-vt-ink text-vt-cream border-4 border-vt-ink p-4 hover:bg-vt-orange disabled:opacity-50 transition-all shadow-[6px_6px_0px_0px_#861F41] hover:-translate-y-1"
- >
- {isProcessing && !parsedItems.length ? <Loader2 className="animate-spin" size={32} /> : <Send size={32} />}
- </button>
- </div>
- </div>
+  const handleProcess = async () => {
+    resetFeedback();
+    setIsProcessing(true);
 
- {parsedItems.length > 0 && (
- <div className="bg-vt-cream border-4 border-vt-ink p-8 shadow-[12px_12px_0px_0px_#E87722] mt-12">
- <div className="border-b-4 border-vt-ink pb-4 mb-8">
- <h2 className="font-serif text-3xl font-bold text-vt-ink uppercase">Parsed Output</h2>
- </div>
- 
- <div className="space-y-6 mb-10">
- {parsedItems.map((item, idx) => (
- <div key={idx} className="flex flex-col sm:flex-row sm:items-center justify-between p-6 bg-vt-cream border-4 border-vt-ink shadow-[4px_4px_0px_0px_#1A1516] ">
- <div>
- <p className="font-sans font-bold text-vt-ink text-2xl">{item.name}</p>
- <div className="flex items-center gap-3 mt-3">
- <span className="font-mono text-sm font-bold uppercase tracking-widest text-gray-600 ">{item.category}</span>
- <span className="w-2 h-2 bg-vt-ink rounded-full"></span>
- <span className="font-mono text-sm font-bold uppercase tracking-widest bg-vt-orange text-vt-ink px-3 py-1 border-2 border-vt-ink">{item.program}</span>
- </div>
- </div>
- <div className="text-left sm:text-right mt-4 sm:mt-0">
- <p className="font-mono font-extrabold text-vt-maroon text-4xl">{item.quantity} <span className="text-xl text-vt-ink ">{item.unit}</span></p>
- </div>
- </div>
- ))}
- </div>
- 
- <div className="flex flex-col sm:flex-row justify-end gap-6 border-t-4 border-vt-ink pt-8">
- <button onClick={() => setParsedItems([])} className="px-8 py-4 font-mono font-bold uppercase text-vt-ink border-4 border-vt-ink hover:bg-vt-ink hover:text-vt-cream transition-colors">Discard</button>
- <button 
- onClick={handleSave}
- disabled={isProcessing}
- className="bg-vt-maroon text-vt-cream border-4 border-vt-ink px-10 py-4 font-mono font-bold uppercase flex items-center justify-center gap-3 hover:bg-vt-maroon-dark hover:-translate-y-1 shadow-[6px_6px_0px_0px_#1A1516] transition-all"
- >
- {isProcessing ? <Loader2 className="animate-spin" size={24} /> : <CheckCircle2 size={24} />}
- Commit to Database
- </button>
- </div>
- </div>
- )}
+    try {
+      if (mode === 'text') {
+        if (!input.trim()) {
+          setStatusMessage('Enter intake text before parsing.');
+          return;
+        }
 
- {isSaved && (
- <div className="bg-green-400 text-vt-ink p-6 border-4 border-vt-ink flex items-center gap-6 shadow-[8px_8px_0px_0px_#1A1516] ">
- <div className="p-3 bg-vt-ink text-green-400 border-2 border-vt-ink">
- <CheckCircle2 size={32} />
- </div>
- <div>
- <p className="font-serif text-2xl font-bold uppercase">Operation Successful</p>
- <p className="font-mono font-bold mt-1">Records committed to database.</p>
- </div>
- </div>
- )}
- </div>
- );
+        const items = await parseInventoryText(input);
+        setParsedItems(items);
+        setStatusMessage(items.length ? `Parsed ${items.length} inventory items.` : 'No items detected from the provided text.');
+        return;
+      }
+
+      if (!invoiceText.trim() && !invoiceFile) {
+        setStatusMessage('Upload an invoice file or paste invoice text before parsing.');
+        return;
+      }
+
+      setInvoiceStatus('parsing');
+      const items = await parseInvoiceInput({
+        vendor: invoiceVendor,
+        date: invoiceDate,
+        defaultProgram: invoiceDefaultProgram,
+        rawText: invoiceText,
+        file: invoiceFile || undefined,
+      });
+
+      setParsedItems(items);
+      setInvoiceStatus('parsed');
+      setStatusMessage(items.length ? `Parsed ${items.length} invoice line items.` : 'No invoice items detected.');
+    } catch (error) {
+      console.error('Error processing intake:', error);
+      if (mode === 'invoice' && invoiceFile) {
+        setInvoiceStatus('loaded');
+      }
+      setStatusMessage(mode === 'text' ? 'Failed to process text intake.' : 'Failed to parse invoice input.');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleSave = async () => {
+    if (parsedItems.length === 0) return;
+
+    setIsProcessing(true);
+    resetFeedback();
+
+    try {
+      if (mode === 'invoice') {
+        const itemsSnapshot = await getDocs(collection(db, 'items'));
+        const existingItems = itemsSnapshot.docs.map((item) => ({ id: item.id, ...item.data() } as InventoryItem));
+
+        for (const item of parsedItems as InvoiceLineItem[]) {
+          const match = existingItems.find(
+            (existing) =>
+              existing.name.toLowerCase() === item.name.toLowerCase() &&
+              existing.unit.toLowerCase() === item.unit.toLowerCase(),
+          );
+
+          if (match) {
+            const itemRef = doc(db, 'items', match.id);
+            await updateDoc(itemRef, {
+              category: item.category || match.category,
+              vendor: invoiceVendor || match.vendor,
+              low_stock_threshold: Number(match.low_stock_threshold ?? 10),
+              pantry_quantity:
+                item.program === 'pantry' ? Number(match.pantry_quantity || 0) + Number(item.quantity) : Number(match.pantry_quantity || 0),
+              grocery_quantity:
+                item.program === 'grocery' ? Number(match.grocery_quantity || 0) + Number(item.quantity) : Number(match.grocery_quantity || 0),
+              updated_at: new Date().toISOString(),
+            });
+            await syncLowStockAlert({
+              itemId: match.id,
+              itemName: match.name,
+              pantryQuantity:
+                item.program === 'pantry' ? Number(match.pantry_quantity || 0) + Number(item.quantity) : Number(match.pantry_quantity || 0),
+              groceryQuantity:
+                item.program === 'grocery' ? Number(match.grocery_quantity || 0) + Number(item.quantity) : Number(match.grocery_quantity || 0),
+              threshold: match.low_stock_threshold,
+            });
+
+            await addDoc(collection(db, 'transactions'), {
+              item_id: match.id,
+              type: 'invoice',
+              quantity: Number(item.quantity),
+              to_program: item.program,
+              vendor: invoiceVendor || undefined,
+              timestamp: new Date().toISOString(),
+              notes: `Invoice intake${invoiceFile ? ` // ${invoiceFile.name}` : ''}`,
+            });
+            continue;
+          }
+
+          const docRef = await addDoc(collection(db, 'items'), {
+            name: item.name,
+            category: item.category || 'Uncategorized',
+            unit: item.unit || 'items',
+            vendor: invoiceVendor || undefined,
+            low_stock_threshold: 10,
+            pantry_quantity: item.program === 'pantry' ? Number(item.quantity) : 0,
+            grocery_quantity: item.program === 'grocery' ? Number(item.quantity) : 0,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          });
+          await syncLowStockAlert({
+            itemId: docRef.id,
+            itemName: item.name,
+            pantryQuantity: item.program === 'pantry' ? Number(item.quantity) : 0,
+            groceryQuantity: item.program === 'grocery' ? Number(item.quantity) : 0,
+            threshold: 10,
+          });
+
+          await addDoc(collection(db, 'transactions'), {
+            item_id: docRef.id,
+            type: 'invoice',
+            quantity: Number(item.quantity),
+            to_program: item.program,
+            vendor: invoiceVendor || undefined,
+            timestamp: new Date().toISOString(),
+            notes: `Invoice intake${invoiceFile ? ` // ${invoiceFile.name}` : ''}`,
+          });
+        }
+
+        await addDoc(collection(db, 'invoices'), {
+          vendor: invoiceVendor,
+          date: invoiceDate,
+          items: parsedItems,
+          raw_text: invoiceText,
+          file_name: invoiceFile?.name,
+          created_at: new Date().toISOString(),
+        });
+
+        setInvoiceText('');
+        setInvoiceVendor('');
+        setInvoiceDate(today);
+        setInvoiceDefaultProgram('pantry');
+        setInvoiceFile(null);
+        setInvoiceStatus('idle');
+      } else {
+        for (const item of parsedItems) {
+          const isPantry = item.program === 'pantry';
+
+          const docRef = await addDoc(collection(db, 'items'), {
+            name: item.name,
+            category: item.category || 'Uncategorized',
+            unit: item.unit || 'items',
+            low_stock_threshold: 10,
+            pantry_quantity: isPantry ? Number(item.quantity) : 0,
+            grocery_quantity: !isPantry ? Number(item.quantity) : 0,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          });
+          await syncLowStockAlert({
+            itemId: docRef.id,
+            itemName: item.name,
+            pantryQuantity: isPantry ? Number(item.quantity) : 0,
+            groceryQuantity: !isPantry ? Number(item.quantity) : 0,
+            threshold: 10,
+          });
+
+          await addDoc(collection(db, 'transactions'), {
+            item_id: docRef.id,
+            type: 'add',
+            quantity: Number(item.quantity),
+            to_program: item.program || 'pantry',
+            timestamp: new Date().toISOString(),
+            notes: 'Added via Smart Intake',
+          });
+        }
+
+        setInput('');
+      }
+
+      setIsSaved(true);
+      setParsedItems([]);
+      setStatusMessage(mode === 'invoice' ? 'Invoice processed and inventory updated.' : 'Records committed to database.');
+    } catch (error) {
+      console.error('Error saving intake items:', error);
+      setStatusMessage(mode === 'invoice' ? 'Failed to save invoice intake.' : 'Failed to save intake records.');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const switchMode = (nextMode: IntakeMode) => {
+    setMode(nextMode);
+    setParsedItems([]);
+    resetFeedback();
+    if (nextMode === 'invoice') {
+      setInvoiceStatus(invoiceFile ? 'loaded' : 'idle');
+    }
+  };
+
+  return (
+    <div className="space-y-10 max-w-6xl mx-auto">
+      <div className="border-b-4 border-vt-ink pb-6 flex flex-col md:flex-row md:items-end justify-between gap-6">
+        <div>
+          <h1 className="font-serif text-5xl font-bold text-vt-ink uppercase tracking-tight">Smart Intake</h1>
+          <p className="font-mono text-gray-600 mt-3 text-lg uppercase tracking-widest">Unified intake hub</p>
+        </div>
+      </div>
+
+      <div className="bg-vt-cream border-4 border-vt-ink p-8 shadow-[12px_12px_0px_0px_#861F41] space-y-8">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+          <button
+            type="button"
+            onClick={() => switchMode('invoice')}
+            className={`py-5 border-4 border-vt-ink flex items-center justify-center gap-4 font-mono font-bold text-lg uppercase tracking-wider transition-all shadow-[6px_6px_0px_0px_#1A1516] ${
+              mode === 'invoice' ? 'bg-vt-maroon text-vt-cream -translate-y-1' : 'bg-vt-cream text-vt-ink hover:bg-vt-maroon hover:text-vt-cream'
+            }`}
+          >
+            <Camera size={28} /> Scan Invoice
+          </button>
+          <button
+            type="button"
+            className="py-5 bg-vt-cream border-4 border-vt-ink text-vt-ink flex items-center justify-center gap-4 font-mono font-bold text-lg uppercase tracking-wider shadow-[6px_6px_0px_0px_#1A1516] opacity-70"
+          >
+            <Mic size={28} /> Voice Soon
+          </button>
+          <button
+            type="button"
+            onClick={() => switchMode('text')}
+            className={`py-5 border-4 border-vt-ink flex items-center justify-center gap-4 font-mono font-bold text-lg uppercase tracking-wider transition-all shadow-[6px_6px_0px_0px_#1A1516] ${
+              mode === 'text' ? 'bg-vt-orange text-vt-ink -translate-y-1' : 'bg-vt-cream text-vt-ink hover:bg-vt-orange/15'
+            }`}
+          >
+            <Sparkles size={28} /> Text Intake
+          </button>
+        </div>
+
+        {mode === 'text' ? (
+          <div className="relative">
+            <div className="absolute top-0 left-0 bg-vt-ink text-vt-cream font-mono text-xs font-bold uppercase tracking-widest px-4 py-2 border-b-4 border-r-4 border-vt-ink z-10">
+              RAW INPUT BUFFER
+            </div>
+            <textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="E.g., 'We received 50 cans of soup for the pantry and 20 boxes of cereal for grocery.'"
+              className="w-full h-64 p-8 pt-16 bg-vt-cream border-4 border-vt-ink focus:ring-4 focus:ring-vt-orange outline-none resize-none font-sans text-2xl text-vt-ink placeholder-gray-400 shadow-inner"
+            />
+            <button
+              onClick={handleProcess}
+              disabled={isProcessing || !input.trim()}
+              className="absolute bottom-6 right-6 bg-vt-ink text-vt-cream border-4 border-vt-ink p-4 hover:bg-vt-orange disabled:opacity-50 transition-all shadow-[6px_6px_0px_0px_#861F41] hover:-translate-y-1"
+            >
+              {isProcessing && !parsedItems.length ? <Loader2 className="animate-spin" size={32} /> : <Send size={32} />}
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(280px,0.75fr)] gap-8 items-start">
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Vendor</label>
+                  <input
+                    value={invoiceVendor}
+                    onChange={(e) => setInvoiceVendor(e.target.value)}
+                    placeholder="Costco, Kroger, Community Partner..."
+                    className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-sans text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all"
+                  />
+                </div>
+                <div>
+                  <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Invoice Date</label>
+                  <input
+                    type="date"
+                    value={invoiceDate}
+                    onChange={(e) => setInvoiceDate(e.target.value)}
+                    className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-sans text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-6 items-end">
+                <div>
+                  <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Invoice File</label>
+                  <label className="w-full flex items-center gap-4 border-4 border-vt-ink p-4 cursor-pointer bg-vt-orange/10 hover:bg-vt-orange/20 transition-colors">
+                    <Upload size={24} className="text-vt-maroon" />
+                    <span className="font-sans text-vt-ink text-lg">{invoiceFile?.name || 'Upload image or PDF invoice'}</span>
+                    <input type="file" accept=".pdf,image/*" className="hidden" onChange={handleFileChange} />
+                  </label>
+                </div>
+                <div>
+                  <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Default Program</label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button type="button" onClick={() => setInvoiceDefaultProgram('pantry')} className={`px-4 py-4 border-4 border-vt-ink font-mono font-bold uppercase ${invoiceDefaultProgram === 'pantry' ? 'bg-vt-maroon text-vt-cream' : 'bg-vt-cream text-vt-ink'}`}>
+                      Pantry
+                    </button>
+                    <button type="button" onClick={() => setInvoiceDefaultProgram('grocery')} className={`px-4 py-4 border-4 border-vt-ink font-mono font-bold uppercase ${invoiceDefaultProgram === 'grocery' ? 'bg-vt-orange text-vt-ink' : 'bg-vt-cream text-vt-ink'}`}>
+                      Grocery
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {invoiceFile ? (
+                <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_240px] gap-6 items-start">
+                  <div className={`border-4 border-vt-ink p-4 ${invoiceStatus === 'parsed' ? 'bg-green-200' : invoiceStatus === 'parsing' ? 'bg-vt-orange/20' : 'bg-vt-cream'}`}>
+                    <p className="font-mono text-xs font-bold uppercase tracking-widest text-gray-500 mb-3">Invoice Status</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 font-mono text-xs font-bold uppercase tracking-widest">
+                      <div className="border-2 border-vt-ink px-3 py-2 bg-vt-ink text-vt-cream">1. File Loaded</div>
+                      <div className={`border-2 border-vt-ink px-3 py-2 ${invoiceStatus === 'parsing' ? 'bg-vt-orange text-vt-ink' : invoiceStatus === 'parsed' ? 'bg-vt-ink text-vt-cream' : 'bg-vt-cream text-vt-ink'}`}>2. Parsing</div>
+                      <div className={`border-2 border-vt-ink px-3 py-2 ${invoiceStatus === 'parsed' ? 'bg-green-400 text-vt-ink' : 'bg-vt-cream text-vt-ink'}`}>3. Review Output</div>
+                    </div>
+                  </div>
+                  <div className="border-4 border-vt-ink bg-vt-orange/10 p-4">
+                    <p className="font-mono text-xs font-bold uppercase tracking-widest text-gray-500 mb-3">Loaded File</p>
+                    {invoiceFile.mimeType.startsWith('image/') ? (
+                      <img src={invoiceFile.previewUrl} alt={invoiceFile.name} className="w-full h-40 object-cover border-4 border-vt-ink bg-vt-cream" />
+                    ) : (
+                      <div className="border-4 border-vt-ink bg-vt-cream p-5 min-h-40 flex flex-col items-center justify-center text-center">
+                        <FileText size={40} className="text-vt-maroon mb-3" />
+                        <p className="font-mono text-xs font-bold uppercase tracking-widest text-vt-ink break-all">{invoiceFile.name}</p>
+                        <p className="font-mono text-xs uppercase tracking-widest text-gray-500 mt-2">PDF ready for Gemini parsing</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="relative">
+                <div className="absolute top-0 left-0 bg-vt-ink text-vt-cream font-mono text-xs font-bold uppercase tracking-widest px-4 py-2 border-b-4 border-r-4 border-vt-ink z-10">
+                  INVOICE NOTES / OCR TEXT
+                </div>
+                <textarea
+                  value={invoiceText}
+                  onChange={(e) => setInvoiceText(e.target.value)}
+                  placeholder="Paste OCR text, vendor notes, or extra instructions. Gemini will combine this with the uploaded invoice file."
+                  className="w-full h-64 p-8 pt-16 bg-vt-cream border-4 border-vt-ink focus:ring-4 focus:ring-vt-orange outline-none resize-none font-sans text-xl text-vt-ink placeholder-gray-400 shadow-inner"
+                />
+                <button
+                  onClick={handleProcess}
+                  disabled={isProcessing || (!invoiceText.trim() && !invoiceFile)}
+                  className="absolute bottom-6 right-6 bg-vt-ink text-vt-cream border-4 border-vt-ink p-4 hover:bg-vt-orange disabled:opacity-50 transition-all shadow-[6px_6px_0px_0px_#861F41] hover:-translate-y-1"
+                >
+                  {isProcessing && !parsedItems.length ? <Loader2 className="animate-spin" size={32} /> : <Send size={32} />}
+                </button>
+              </div>
+            </div>
+
+            <div className="border-4 border-vt-ink bg-vt-orange/10 p-6 space-y-4">
+              <div className="flex items-center gap-3">
+                <FileText className="text-vt-maroon" size={28} />
+                <h2 className="font-serif text-2xl font-bold text-vt-ink uppercase">Invoice Tips</h2>
+              </div>
+              <p className="font-sans text-gray-700">
+                Upload the invoice file first, then paste any OCR text or notes if needed. Gemini will extract structured inventory lines for review before anything is saved.
+              </p>
+              <ul className="font-mono text-sm text-vt-ink space-y-3 uppercase tracking-wide">
+                <li>Use clear photos or scans</li>
+                <li>Add vendor/date for audit history</li>
+                <li>Review parsed quantities before committing</li>
+              </ul>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {statusMessage ? (
+        <div className={`border-4 border-vt-ink p-5 shadow-[8px_8px_0px_0px_#1A1516] ${statusMessage.includes('Failed') ? 'bg-red-200 text-vt-ink' : 'bg-vt-cream text-vt-ink'}`}>
+          <p className="font-mono font-bold uppercase tracking-widest text-sm">{statusMessage}</p>
+        </div>
+      ) : null}
+
+      {parsedItems.length > 0 && (
+        <div className="bg-vt-cream border-4 border-vt-ink p-8 shadow-[12px_12px_0px_0px_#E87722] mt-12">
+          <div className="border-b-4 border-vt-ink pb-4 mb-8">
+            <h2 className="font-serif text-3xl font-bold text-vt-ink uppercase">
+              {mode === 'invoice' ? 'Parsed Invoice Output' : 'Parsed Output'}
+            </h2>
+          </div>
+
+          <div className="space-y-6 mb-10">
+            {parsedItems.map((item, idx) => (
+              <div key={idx} className="flex flex-col sm:flex-row sm:items-center justify-between p-6 bg-vt-cream border-4 border-vt-ink shadow-[4px_4px_0px_0px_#1A1516]">
+                <div>
+                  <p className="font-sans font-bold text-vt-ink text-2xl">{item.name}</p>
+                  <div className="flex items-center gap-3 mt-3 flex-wrap">
+                    <span className="font-mono text-sm font-bold uppercase tracking-widest text-gray-600">{item.category}</span>
+                    <span className="w-2 h-2 bg-vt-ink rounded-full"></span>
+                    <span className="font-mono text-sm font-bold uppercase tracking-widest bg-vt-orange text-vt-ink px-3 py-1 border-2 border-vt-ink">{item.program}</span>
+                    {'source_line' in item && item.source_line ? (
+                      <span className="font-mono text-xs font-bold uppercase tracking-widest border-2 border-vt-ink px-3 py-1">
+                        Invoice line
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+                <div className="text-left sm:text-right mt-4 sm:mt-0">
+                  <p className="font-mono font-extrabold text-vt-maroon text-4xl">
+                    {item.quantity} <span className="text-xl text-vt-ink">{item.unit}</span>
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex flex-col sm:flex-row justify-end gap-6 border-t-4 border-vt-ink pt-8">
+            <button onClick={() => setParsedItems([])} className="px-8 py-4 font-mono font-bold uppercase text-vt-ink border-4 border-vt-ink hover:bg-vt-ink hover:text-vt-cream transition-colors">
+              Discard
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={isProcessing}
+              className="bg-vt-maroon text-vt-cream border-4 border-vt-ink px-10 py-4 font-mono font-bold uppercase flex items-center justify-center gap-3 hover:bg-vt-maroon-dark hover:-translate-y-1 shadow-[6px_6px_0px_0px_#1A1516] transition-all"
+            >
+              {isProcessing ? <Loader2 className="animate-spin" size={24} /> : <CheckCircle2 size={24} />}
+              Commit to Database
+            </button>
+          </div>
+        </div>
+      )}
+
+      {isSaved && (
+        <div className="bg-green-400 text-vt-ink p-6 border-4 border-vt-ink flex items-center gap-6 shadow-[8px_8px_0px_0px_#1A1516]">
+          <div className="p-3 bg-vt-ink text-green-400 border-2 border-vt-ink">
+            <CheckCircle2 size={32} />
+          </div>
+          <div>
+            <p className="font-serif text-2xl font-bold uppercase">Operation Successful</p>
+            <p className="font-mono font-bold mt-1">{mode === 'invoice' ? 'Invoice saved and inventory updated.' : 'Records committed to database.'}</p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }

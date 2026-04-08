@@ -1,37 +1,97 @@
 import { useState, useEffect } from 'react';
-import { collection, onSnapshot, addDoc } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Plus, Search, Package } from 'lucide-react';
+import { Plus, Search, Package, PencilLine, Boxes, CheckCircle2 } from 'lucide-react';
 import { InventoryInput, InventoryItem } from '../types';
+import { syncLowStockAlert } from '../services/alerts';
+
+const categoryOptions = [
+ 'Grains',
+ 'Canned Goods',
+ 'Produce',
+ 'Snacks',
+ 'Protein',
+ 'Dairy',
+ 'Beverages',
+ 'Frozen',
+ 'Bakery',
+ 'Other',
+];
+
+const unitOptions = ['items', 'boxes', 'bags', 'cans', 'bottles', 'packs', 'lbs'];
+
+const thresholdOptions = [5, 10, 15, 20];
+
+const emptyItem: InventoryInput = {
+ name: '',
+ category: 'Grains',
+ unit: 'items',
+ low_stock_threshold: 10,
+ pantry_quantity: 0,
+ grocery_quantity: 0,
+};
+
+const emptyRestock = {
+ pantry: 0,
+ grocery: 0,
+ notes: '',
+};
 
 export default function Inventory() {
  const [items, setItems] = useState<InventoryItem[]>([]);
  const [search, setSearch] = useState('');
  const [isAdding, setIsAdding] = useState(false);
- const [newItem, setNewItem] = useState<InventoryInput>({
- name: '',
- category: '',
- unit: 'items',
- pantry_quantity: 0,
- grocery_quantity: 0,
- });
+ const [newItem, setNewItem] = useState<InventoryInput>(emptyItem);
+ const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
+ const [editItem, setEditItem] = useState<InventoryInput>(emptyItem);
+ const [restock, setRestock] = useState(emptyRestock);
+ const [isSaving, setIsSaving] = useState(false);
+ const [statusMessage, setStatusMessage] = useState('');
 
  useEffect(() => {
  const unsub = onSnapshot(collection(db, 'items'), (snapshot) => {
- setItems(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InventoryItem)));
+ const nextItems = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InventoryItem));
+ setItems(nextItems);
+ setSelectedItem((current) => {
+ if (!current) return null;
+ return nextItems.find((item) => item.id === current.id) || null;
+ });
  });
  return unsub;
  }, []);
+
+ useEffect(() => {
+ if (!selectedItem) return;
+ setEditItem({
+ name: selectedItem.name,
+ category: selectedItem.category,
+ unit: selectedItem.unit,
+ low_stock_threshold: Number(selectedItem.low_stock_threshold ?? 10),
+ pantry_quantity: Number(selectedItem.pantry_quantity || 0),
+ grocery_quantity: Number(selectedItem.grocery_quantity || 0),
+ });
+ setRestock(emptyRestock);
+ setStatusMessage('');
+ }, [selectedItem]);
 
  const handleAddItem = async (e: React.FormEvent) => {
  e.preventDefault();
  try {
  const docRef = await addDoc(collection(db, 'items'), {
  ...newItem,
+ low_stock_threshold: Number(newItem.low_stock_threshold ?? 10),
  pantry_quantity: Number(newItem.pantry_quantity),
  grocery_quantity: Number(newItem.grocery_quantity),
  created_at: new Date().toISOString(),
  updated_at: new Date().toISOString(),
+ });
+
+ await syncLowStockAlert({
+ itemId: docRef.id,
+ itemName: newItem.name,
+ pantryQuantity: Number(newItem.pantry_quantity),
+ groceryQuantity: Number(newItem.grocery_quantity),
+ threshold: Number(newItem.low_stock_threshold ?? 10),
  });
  
  await addDoc(collection(db, 'transactions'), {
@@ -43,10 +103,71 @@ export default function Inventory() {
  });
 
  setIsAdding(false);
- setNewItem({ name: '', category: '', unit: 'items', pantry_quantity: 0, grocery_quantity: 0 });
+ setNewItem(emptyItem);
  } catch (error) {
  console.error("Error adding item:", error);
  alert("Failed to add item");
+ }
+ };
+
+ const handleSaveItem = async (e: React.FormEvent) => {
+ e.preventDefault();
+ if (!selectedItem) return;
+
+ setIsSaving(true);
+ setStatusMessage('');
+
+ const pantryDelta = Number(restock.pantry || 0);
+ const groceryDelta = Number(restock.grocery || 0);
+ const nextPantryQty = Number(editItem.pantry_quantity || 0) + pantryDelta;
+ const nextGroceryQty = Number(editItem.grocery_quantity || 0) + groceryDelta;
+
+ if (nextPantryQty < 0 || nextGroceryQty < 0) {
+ setIsSaving(false);
+ setStatusMessage('Restock adjustment would make inventory negative.');
+ return;
+ }
+
+ try {
+ const itemRef = doc(db, 'items', selectedItem.id);
+ await updateDoc(itemRef, {
+ name: editItem.name,
+ category: editItem.category,
+ unit: editItem.unit,
+ low_stock_threshold: Number(editItem.low_stock_threshold ?? 10),
+ pantry_quantity: nextPantryQty,
+ grocery_quantity: nextGroceryQty,
+ updated_at: new Date().toISOString(),
+ });
+
+ await syncLowStockAlert({
+ itemId: selectedItem.id,
+ itemName: editItem.name,
+ pantryQuantity: nextPantryQty,
+ groceryQuantity: nextGroceryQty,
+ threshold: Number(editItem.low_stock_threshold ?? 10),
+ });
+
+ if (pantryDelta !== 0 || groceryDelta !== 0) {
+ const totalDelta = pantryDelta + groceryDelta;
+ await addDoc(collection(db, 'transactions'), {
+ item_id: selectedItem.id,
+ type: 'add',
+ quantity: totalDelta,
+ from_program: totalDelta < 0 ? 'inventory' : undefined,
+ to_program: totalDelta >= 0 ? 'inventory' : undefined,
+ timestamp: new Date().toISOString(),
+ notes: restock.notes || `Restock update: pantry ${pantryDelta}, grocery ${groceryDelta}`,
+ });
+ }
+
+ setRestock(emptyRestock);
+ setStatusMessage('Inventory record updated.');
+ } catch (error) {
+ console.error('Error updating item:', error);
+ setStatusMessage('Failed to update inventory record.');
+ } finally {
+ setIsSaving(false);
  }
  };
 
@@ -56,11 +177,12 @@ export default function Inventory() {
  );
 
  return (
+ <>
  <div className="space-y-10">
  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-6 border-b-4 border-vt-ink pb-6">
  <div>
  <h1 className="font-serif text-5xl font-bold text-vt-ink uppercase tracking-tight">Inventory</h1>
- <p className="font-mono text-gray-600 mt-3 text-lg uppercase tracking-widest">Database Records</p>
+ <p className="font-mono text-gray-600 mt-3 text-lg uppercase tracking-widest">Current stock</p>
  </div>
  <button 
  onClick={() => setIsAdding(true)}
@@ -82,42 +204,7 @@ export default function Inventory() {
  />
  </div>
 
- {isAdding && (
- <div className="bg-vt-cream border-4 border-vt-ink p-8 shadow-[12px_12px_0px_0px_#861F41] mb-10">
- <div className="border-b-4 border-vt-ink pb-4 mb-8">
- <h2 className="font-serif text-3xl font-bold text-vt-ink uppercase">Initialize New Item</h2>
- </div>
- <form onSubmit={handleAddItem} className="grid grid-cols-1 md:grid-cols-2 gap-8">
- <div>
- <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Item Designation</label>
- <input required type="text" value={newItem.name} onChange={e => setNewItem({...newItem, name: e.target.value})} className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-sans text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all" />
- </div>
- <div>
- <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Classification</label>
- <input required type="text" value={newItem.category} onChange={e => setNewItem({...newItem, category: e.target.value})} className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-sans text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all" />
- </div>
- <div>
- <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Unit Type</label>
- <input required type="text" value={newItem.unit} onChange={e => setNewItem({...newItem, unit: e.target.value})} className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-sans text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all" />
- </div>
- <div className="grid grid-cols-2 gap-6">
- <div>
- <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Pantry Qty</label>
- <input type="number" min="0" value={newItem.pantry_quantity} onChange={e => setNewItem({...newItem, pantry_quantity: Number(e.target.value)})} className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-mono text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all" />
- </div>
- <div>
- <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Grocery Qty</label>
- <input type="number" min="0" value={newItem.grocery_quantity} onChange={e => setNewItem({...newItem, grocery_quantity: Number(e.target.value)})} className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-mono text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all" />
- </div>
- </div>
- <div className="md:col-span-2 flex justify-end gap-6 mt-6 border-t-4 border-vt-ink pt-8">
- <button type="button" onClick={() => setIsAdding(false)} className="px-8 py-4 font-mono font-bold uppercase text-vt-ink border-4 border-vt-ink hover:bg-vt-ink hover:text-vt-cream transition-colors">Abort</button>
- <button type="submit" className="bg-vt-orange text-vt-ink border-4 border-vt-ink px-10 py-4 font-mono font-bold uppercase hover:bg-vt-orange-dark hover:-translate-y-1 shadow-[6px_6px_0px_0px_#1A1516] transition-all">Commit Record</button>
- </div>
- </form>
- </div>
- )}
-
+ <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.3fr)_minmax(360px,0.8fr)] gap-10 items-start">
  <div className="bg-vt-cream border-4 border-vt-ink shadow-[12px_12px_0px_0px_#1A1516] overflow-hidden">
  <div className="overflow-x-auto">
  <table className="w-full text-left border-collapse">
@@ -132,7 +219,13 @@ export default function Inventory() {
  </thead>
  <tbody className="divide-y-4 divide-vt-ink ">
  {filteredItems.map(item => (
- <tr key={item.id} className="hover:bg-vt-orange/10 transition-colors">
+ <tr
+ key={item.id}
+ onClick={() => setSelectedItem(item)}
+ className={`cursor-pointer transition-colors ${
+ selectedItem?.id === item.id ? 'bg-vt-orange/20' : 'hover:bg-vt-orange/10'
+ }`}
+ >
  <td className="p-6 border-r-4 border-vt-ink ">
  <div className="flex items-center gap-4">
  <div className="p-3 bg-vt-cream border-2 border-vt-ink ">
@@ -159,6 +252,189 @@ export default function Inventory() {
  </table>
  </div>
  </div>
+
+ <aside className="bg-vt-cream border-4 border-vt-ink p-8 shadow-[12px_12px_0px_0px_#861F41]">
+ {!selectedItem ? (
+ <div className="min-h-[420px] flex flex-col items-center justify-center text-center border-4 border-dashed border-vt-ink p-8 bg-vt-orange/10">
+ <Boxes size={56} className="text-vt-maroon mb-5" />
+ <h2 className="font-serif text-3xl font-bold text-vt-ink uppercase mb-3">Choose An Item</h2>
+ <p className="font-sans text-gray-600 max-w-sm">
+ Choose an item from the table to update its details, adjust stock, or change when it should show as low stock.
+ </p>
  </div>
+ ) : (
+ <form onSubmit={handleSaveItem} className="space-y-8">
+ <div className="border-b-4 border-vt-ink pb-4">
+ <div className="inline-flex items-center gap-3 bg-vt-ink text-vt-cream border-4 border-vt-ink px-4 py-2 shadow-[4px_4px_0px_0px_#E87722] mb-5">
+ <PencilLine size={20} />
+ <span className="font-mono font-bold uppercase tracking-widest text-sm">Edit + Restock</span>
+ </div>
+ <h2 className="font-serif text-3xl font-bold text-vt-ink uppercase">{selectedItem.name}</h2>
+ <p className="font-mono text-sm text-gray-500 uppercase tracking-widest mt-2">Update details and stock levels</p>
+ </div>
+
+ <div>
+ <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Item Name</label>
+ <input required type="text" value={editItem.name} onChange={e => setEditItem({ ...editItem, name: e.target.value })} className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-sans text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all" />
+ </div>
+
+ <div>
+ <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Category</label>
+ <select value={editItem.category} onChange={e => setEditItem({ ...editItem, category: e.target.value })} className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-sans text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all">
+ {categoryOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+ </select>
+ </div>
+
+ <div>
+ <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Unit</label>
+ <select value={editItem.unit} onChange={e => setEditItem({ ...editItem, unit: e.target.value })} className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-sans text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all">
+ {unitOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+ </select>
+ </div>
+
+ <div>
+ <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Alert When Total Stock Falls Below</label>
+ <select value={editItem.low_stock_threshold ?? 10} onChange={e => setEditItem({ ...editItem, low_stock_threshold: Number(e.target.value) })} className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-sans text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all">
+ {thresholdOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+ </select>
+ <p className="font-sans text-sm text-gray-600 mt-2">The dashboard notice clears automatically after stock is replenished.</p>
+ </div>
+
+ <div className="grid grid-cols-2 gap-5">
+ <div>
+ <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Current Pantry Stock</label>
+ <input type="number" min="0" value={editItem.pantry_quantity} onChange={e => setEditItem({ ...editItem, pantry_quantity: Number(e.target.value) })} className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-mono text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all" />
+ </div>
+ <div>
+ <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Current Grocery Stock</label>
+ <input type="number" min="0" value={editItem.grocery_quantity} onChange={e => setEditItem({ ...editItem, grocery_quantity: Number(e.target.value) })} className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-mono text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all" />
+ </div>
+ </div>
+
+ <div className="border-4 border-vt-ink p-6 bg-vt-orange/10 space-y-5">
+ <div>
+ <h3 className="font-serif text-2xl font-bold text-vt-ink uppercase">Adjust Stock</h3>
+ <p className="font-sans text-gray-600 mt-1">Use positive numbers to add stock. Use negative numbers only when fixing a count.</p>
+ </div>
+ <div className="grid grid-cols-2 gap-5">
+ <div>
+ <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Pantry Delta</label>
+ <input type="number" value={restock.pantry} onChange={e => setRestock({ ...restock, pantry: Number(e.target.value) })} className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-mono text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all" />
+ </div>
+ <div>
+ <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Grocery Delta</label>
+ <input type="number" value={restock.grocery} onChange={e => setRestock({ ...restock, grocery: Number(e.target.value) })} className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-mono text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all" />
+ </div>
+ </div>
+ <div>
+ <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Notes</label>
+ <textarea value={restock.notes} onChange={e => setRestock({ ...restock, notes: e.target.value })} rows={3} placeholder="Delivery arrived, shelf recount, volunteer correction..." className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-sans text-base text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all resize-none" />
+ </div>
+ </div>
+
+ <div className="border-4 border-vt-ink p-5 bg-vt-ink text-vt-cream">
+ <p className="font-mono text-xs font-bold uppercase tracking-widest mb-3">New Totals After Save</p>
+ <div className="grid grid-cols-2 gap-4">
+ <div>
+ <p className="font-mono text-sm uppercase text-vt-orange">Pantry</p>
+ <p className="font-mono text-3xl font-bold">{Number(editItem.pantry_quantity || 0) + Number(restock.pantry || 0)}</p>
+ </div>
+ <div>
+ <p className="font-mono text-sm uppercase text-vt-orange">Grocery</p>
+ <p className="font-mono text-3xl font-bold">{Number(editItem.grocery_quantity || 0) + Number(restock.grocery || 0)}</p>
+ </div>
+ </div>
+ </div>
+
+ {statusMessage ? (
+ <div className={`border-4 border-vt-ink px-4 py-3 shadow-[4px_4px_0px_0px_#1A1516] ${statusMessage.includes('Failed') || statusMessage.includes('negative') ? 'bg-red-200 text-vt-ink' : 'bg-green-300 text-vt-ink'}`}>
+ <div className="flex items-start gap-3">
+ <CheckCircle2 size={18} className="mt-0.5" />
+ <p className="font-sans text-sm font-medium">{statusMessage}</p>
+ </div>
+ </div>
+ ) : null}
+
+ <div className="flex justify-end gap-4 border-t-4 border-vt-ink pt-6">
+ <button type="button" onClick={() => setSelectedItem(null)} className="px-6 py-4 font-mono font-bold uppercase text-vt-ink border-4 border-vt-ink hover:bg-vt-ink hover:text-vt-cream transition-colors">Close</button>
+ <button disabled={isSaving} type="submit" className="bg-vt-orange text-vt-ink border-4 border-vt-ink px-8 py-4 font-mono font-bold uppercase hover:bg-vt-orange-dark hover:-translate-y-1 shadow-[6px_6px_0px_0px_#1A1516] transition-all disabled:opacity-60 disabled:hover:translate-y-0">
+ {isSaving ? 'Saving...' : 'Save Changes'}
+ </button>
+ </div>
+ </form>
+ )}
+ </aside>
+ </div>
+
+ </div>
+ {isAdding && (
+ <div className="fixed inset-y-0 right-0 left-0 lg:left-72 z-50 flex items-center justify-center p-4 md:p-8">
+ <button
+ type="button"
+ aria-label="Close new item modal"
+ onClick={() => setIsAdding(false)}
+ className="absolute inset-0 bg-vt-ink/55 backdrop-blur-[2px]"
+ />
+ <div className="relative w-full max-w-4xl max-h-[90vh] overflow-y-auto bg-vt-cream border-4 border-vt-ink shadow-[16px_16px_0px_0px_#1A1516]">
+ <div className="sticky top-0 bg-vt-maroon text-vt-cream border-b-4 border-vt-ink px-6 py-5 flex items-center justify-between gap-4">
+ <div>
+ <p className="font-mono text-xs font-bold uppercase tracking-[0.3em] opacity-80">New Record</p>
+ <h2 className="font-serif text-3xl font-bold uppercase">Add Inventory Item</h2>
+ </div>
+ <button
+ type="button"
+ onClick={() => setIsAdding(false)}
+ className="border-4 border-vt-cream px-4 py-2 font-mono font-bold uppercase hover:bg-vt-cream hover:text-vt-maroon transition-colors"
+ >
+ Close
+ </button>
+ </div>
+
+ <form onSubmit={handleAddItem} className="p-8 md:p-10 grid grid-cols-1 md:grid-cols-2 gap-8">
+ <div>
+ <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Item Name</label>
+ <input required type="text" value={newItem.name} onChange={e => setNewItem({...newItem, name: e.target.value})} className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-sans text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all" />
+ </div>
+ <div>
+ <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Category</label>
+ <select value={newItem.category} onChange={e => setNewItem({...newItem, category: e.target.value})} className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-sans text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all">
+ {categoryOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+ </select>
+ </div>
+ <div>
+ <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Unit</label>
+ <select value={newItem.unit} onChange={e => setNewItem({...newItem, unit: e.target.value})} className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-sans text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all">
+ {unitOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+ </select>
+ </div>
+ <div>
+ <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Alert When Total Stock Falls Below</label>
+ <select value={newItem.low_stock_threshold ?? 10} onChange={e => setNewItem({...newItem, low_stock_threshold: Number(e.target.value)})} className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-sans text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all">
+ {thresholdOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+ </select>
+ <p className="font-sans text-sm text-gray-600 mt-2">The dashboard will automatically flag this item when it drops below the alert level.</p>
+ </div>
+ <div className="border-4 border-vt-ink bg-vt-orange/10 p-5">
+ <p className="font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-4">Starting Stock</p>
+ <div className="grid grid-cols-2 gap-6">
+ <div>
+ <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Starting Pantry Stock</label>
+ <input type="number" min="0" value={newItem.pantry_quantity} onChange={e => setNewItem({...newItem, pantry_quantity: Number(e.target.value)})} className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-mono text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all" />
+ </div>
+ <div>
+ <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Starting Grocery Stock</label>
+ <input type="number" min="0" value={newItem.grocery_quantity} onChange={e => setNewItem({...newItem, grocery_quantity: Number(e.target.value)})} className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-mono text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all" />
+ </div>
+ </div>
+ </div>
+ <div className="md:col-span-2 flex justify-end gap-6 mt-2 border-t-4 border-vt-ink pt-8">
+ <button type="button" onClick={() => setIsAdding(false)} className="px-8 py-4 font-mono font-bold uppercase text-vt-ink border-4 border-vt-ink hover:bg-vt-ink hover:text-vt-cream transition-colors">Abort</button>
+ <button type="submit" className="bg-vt-orange text-vt-ink border-4 border-vt-ink px-10 py-4 font-mono font-bold uppercase hover:bg-vt-orange-dark hover:-translate-y-1 shadow-[6px_6px_0px_0px_#1A1516] transition-all">Commit Record</button>
+ </div>
+ </form>
+ </div>
+ </div>
+ )}
+ </>
  );
 }
