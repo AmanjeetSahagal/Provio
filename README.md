@@ -6,7 +6,7 @@ Provio is an AI-assisted operations system for modern food pantries. It replaces
 
 - Google sign-in with Firebase Auth
 - Inventory creation, editing, restocking, and vendor tracking
-- Smart Intake for text parsing and invoice parsing
+- Smart Intake for voice, text, and invoice parsing
 - Program transfers between pantry and grocery
 - Low-stock alerts
 - Checkpoints and active baseline tracking
@@ -66,20 +66,17 @@ Completed:
 
 - Inventory edit and restock workflows
 - Invoice workflow in Smart Intake
+- Voice intake with transcript review and edit-before-save
 - Low-stock alerts
 - End-of-year rollover
 - Vendor tracking
 - Formal checkpoint baseline behavior
 - Invoice-linked audit flows
 
-Remaining:
-
-- Voice input
-
 ## Main App Areas
 
 - `Dashboard`: category totals, restock notices, recent activity
 - `Inventory`: create, edit, search, vendor tagging, stock updates
-- `Smart Intake`: invoice parsing, text parsing, invoice audit trail
+- `Smart Intake`: voice capture, text parsing, invoice parsing, invoice audit trail
 - `Transfers`: move stock between pantry and grocery
 - `Checkpoints`: save baselines, compare against active baseline, run rollover

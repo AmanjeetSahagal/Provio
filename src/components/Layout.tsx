@@ -18,7 +18,7 @@ export default function Layout({ children }: { children: ReactNode }) {
  return (
  <div className="min-h-screen flex transition-colors duration-300">
  {/* Sidebar - Brutalist Retro */}
- <aside className="w-72 bg-vt-cream border-r-4 border-vt-ink flex flex-col z-20 shadow-[8px_0px_0px_0px_#861F41] ">
+ <aside className="sticky top-0 h-screen w-72 shrink-0 bg-vt-cream border-r-4 border-vt-ink flex flex-col z-20 shadow-[8px_0px_0px_0px_#861F41] overflow-hidden">
  <div className="p-6 border-b-4 border-vt-ink bg-vt-maroon text-vt-cream ">
  <h1 className="font-serif text-4xl font-bold tracking-tight flex items-center gap-3">
  <img src={provioLogo} alt="Provio logo" className="h-10 w-10 rounded-full border-2 border-vt-cream object-cover" />
@@ -29,7 +29,7 @@ export default function Layout({ children }: { children: ReactNode }) {
  </p>
  </div>
  
- <nav className="flex-1 p-6 space-y-4 overflow-y-auto">
+ <nav className="flex-1 min-h-0 p-6 space-y-4 overflow-y-auto">
  {navItems.map((item) => {
  const Icon = item.icon;
  const isActive = location.pathname === item.path;
@@ -53,7 +53,7 @@ export default function Layout({ children }: { children: ReactNode }) {
  <div className="p-6 border-t-4 border-vt-ink bg-vt-cream">
  <button
  onClick={logout}
- className="flex items-center gap-4 px-4 py-3 w-full font-mono font-bold text-sm uppercase tracking-wider transition-all border-2 border-vt-ink bg-vt-orange text-vt-ink shadow-[4px_4px_0px_0px_#861F41] hover:shadow-[4px_4px_0px_0px_#1A1516] hover:-translate-y-1"
+ className="flex items-center gap-4 px-4 py-3 w-full font-mono font-bold text-sm uppercase tracking-wider transition-all border-2 border-vt-ink bg-vt-ink text-vt-cream shadow-[4px_4px_0px_0px_#861F41] hover:bg-vt-maroon hover:shadow-[4px_4px_0px_0px_#1A1516] hover:-translate-y-1"
  >
  <LogOut size={20} />
  Log Out
@@ -62,7 +62,7 @@ export default function Layout({ children }: { children: ReactNode }) {
  </aside>
 
  {/* Main Content */}
- <main className="flex-1 overflow-y-auto relative z-10 retro-grid">
+ <main className="min-w-0 flex-1 overflow-y-auto relative z-10 retro-grid">
  <div className="p-8 md:p-12 max-w-7xl mx-auto">
  {children}
  </div>
