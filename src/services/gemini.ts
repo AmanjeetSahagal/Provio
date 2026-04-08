@@ -3,6 +3,7 @@ import { InvoiceLineItem, ParsedInventoryItem } from '../types';
 
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 const ai = apiKey ? new GoogleGenAI({ apiKey }) : null;
+const RETRY_DELAYS_MS = [400, 1200];
 
 function ensureAi() {
   if (!ai) {
@@ -21,9 +22,45 @@ function normalizeInventoryItems(parsed: unknown[]): ParsedInventoryItem[] {
   }));
 }
 
-export const parseInventoryText = async (text: string): Promise<ParsedInventoryItem[]> => {
+function parseJsonArrayResponse(responseText: string) {
+  const trimmed = responseText.trim();
+  const withoutFences = trimmed.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim();
+  const parsed = JSON.parse(withoutFences || '[]');
+
+  if (!Array.isArray(parsed)) {
+    throw new Error('Gemini returned a non-array response.');
+  }
+
+  return parsed;
+}
+
+function isRetryableGeminiError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return /503|ServiceUnavailable|UNAVAILABLE|overloaded|temporarily unavailable/i.test(message);
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function generateJsonContent(parameters: Parameters<GoogleGenAI['models']['generateContent']>[0]) {
   const client = ensureAi();
 
+  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt += 1) {
+    try {
+      return await client.models.generateContent(parameters);
+    } catch (error) {
+      if (attempt === RETRY_DELAYS_MS.length || !isRetryableGeminiError(error)) {
+        throw error;
+      }
+      await delay(RETRY_DELAYS_MS[attempt]);
+    }
+  }
+
+  throw new Error('Gemini request failed.');
+}
+
+export const parseInventoryText = async (text: string): Promise<ParsedInventoryItem[]> => {
   const prompt = `
     You are an AI assistant for a food pantry inventory system.
     Extract the inventory items from the following text.
@@ -38,7 +75,7 @@ export const parseInventoryText = async (text: string): Promise<ParsedInventoryI
   `;
 
   try {
-    const response = await client.models.generateContent({
+    const response = await generateJsonContent({
       model: "gemini-2.5-flash",
       contents: prompt,
       config: {
@@ -46,17 +83,11 @@ export const parseInventoryText = async (text: string): Promise<ParsedInventoryI
       },
     });
 
-    const jsonStr = response.text?.trim() || "[]";
-    const parsed = JSON.parse(jsonStr);
-
-    if (!Array.isArray(parsed)) {
-      return [];
-    }
-
+    const parsed = parseJsonArrayResponse(response.text || '[]');
     return normalizeInventoryItems(parsed);
   } catch (error) {
     console.error("Error parsing inventory text:", error);
-    throw error;
+    throw new Error(error instanceof Error ? error.message : 'Gemini could not parse the intake text.');
   }
 };
 
@@ -78,8 +109,6 @@ export const parseInvoiceInput = async ({
   rawText,
   file,
 }: InvoiceParseInput): Promise<InvoiceLineItem[]> => {
-  const client = ensureAi();
-
   const prompt = `
     You are parsing a food pantry invoice into structured inventory items.
     Extract the received goods only.
@@ -113,7 +142,7 @@ export const parseInvoiceInput = async ({
   }
 
   try {
-    const response = await client.models.generateContent({
+    const response = await generateJsonContent({
       model: 'gemini-2.5-flash',
       contents: parts,
       config: {
@@ -121,11 +150,7 @@ export const parseInvoiceInput = async ({
       },
     });
 
-    const jsonStr = response.text?.trim() || '[]';
-    const parsed = JSON.parse(jsonStr);
-    if (!Array.isArray(parsed)) {
-      return [];
-    }
+    const parsed = parseJsonArrayResponse(response.text || '[]');
 
     return parsed.map((item) => ({
       name: String(item.name || 'Unknown item'),
@@ -138,6 +163,6 @@ export const parseInvoiceInput = async ({
     }));
   } catch (error) {
     console.error('Error parsing invoice input:', error);
-    throw error;
+    throw new Error(error instanceof Error ? error.message : 'Gemini could not parse the invoice input.');
   }
 };

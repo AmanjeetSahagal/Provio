@@ -208,7 +208,12 @@ export default function SmartIntake() {
       if (mode === 'invoice' && invoiceFile) {
         setInvoiceStatus('loaded');
       }
-      setStatusMessage(mode === 'invoice' ? 'Failed to parse invoice input.' : `Failed to process ${mode === 'voice' ? 'voice' : 'text'} intake.`);
+      const detail = error instanceof Error ? error.message : 'Unknown error.';
+      setStatusMessage(
+        mode === 'invoice'
+          ? `Failed to parse invoice input. ${detail}`
+          : `Failed to process ${mode === 'voice' ? 'voice' : 'text'} intake. ${detail}`,
+      );
     } finally {
       setIsProcessing(false);
     }
@@ -396,6 +401,30 @@ export default function SmartIntake() {
   };
 
   const selectedInvoice = recentInvoices.find((invoice) => invoice.id === selectedInvoiceId) || recentInvoices[0] || null;
+
+  const updateParsedItem = (
+    index: number,
+    field: keyof ParsedInventoryItem,
+    value: string | number,
+  ) => {
+    setParsedItems((current) =>
+      current.map((item, itemIndex) =>
+        itemIndex === index
+          ? {
+              ...item,
+              [field]:
+                field === 'quantity'
+                  ? Number(value)
+                  : field === 'program'
+                    ? value === 'grocery'
+                      ? 'grocery'
+                      : 'pantry'
+                    : value,
+            }
+          : item,
+      ),
+    );
+  };
 
   const switchMode = (nextMode: IntakeMode) => {
     setMode(nextMode);
@@ -722,29 +751,89 @@ export default function SmartIntake() {
           <div className="space-y-6 mb-10">
             {parsedItems.map((item, idx) => (
               <div key={idx} className="flex flex-col sm:flex-row sm:items-center justify-between p-6 bg-vt-cream border-4 border-vt-ink shadow-[4px_4px_0px_0px_#1A1516]">
-                <div>
-                  <p className="font-sans font-bold text-vt-ink text-2xl">{item.name}</p>
-                  <div className="flex items-center gap-3 mt-3 flex-wrap">
-                    <span className="font-mono text-sm font-bold uppercase tracking-widest text-gray-600">{item.category}</span>
-                    <span className="w-2 h-2 bg-vt-ink rounded-full"></span>
-                    <span className="font-mono text-sm font-bold uppercase tracking-widest bg-vt-orange text-vt-ink px-3 py-1 border-2 border-vt-ink">{item.program}</span>
-                    {('vendor' in item && item.vendor) || (mode === 'text' && textVendor.trim()) ? (
-                      <span className="font-mono text-xs font-bold uppercase tracking-widest border-2 border-vt-ink px-3 py-1">
-                        Vendor: {String('vendor' in item && item.vendor ? item.vendor : textVendor.trim())}
-                      </span>
-                    ) : null}
-                    {'source_line' in item && item.source_line ? (
-                      <span className="font-mono text-xs font-bold uppercase tracking-widest border-2 border-vt-ink px-3 py-1">
-                        Invoice line
-                      </span>
-                    ) : null}
+                {mode === 'voice' ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
+                    <div>
+                      <label className="block font-mono text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Item Name</label>
+                      <input
+                        value={item.name}
+                        onChange={(e) => updateParsedItem(idx, 'name', e.target.value)}
+                        className="w-full border-2 border-vt-ink bg-white px-3 py-3 font-sans text-lg text-vt-ink focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-mono text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Category</label>
+                      <input
+                        value={item.category}
+                        onChange={(e) => updateParsedItem(idx, 'category', e.target.value)}
+                        className="w-full border-2 border-vt-ink bg-white px-3 py-3 font-sans text-lg text-vt-ink focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-mono text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Unit</label>
+                      <input
+                        value={item.unit}
+                        onChange={(e) => updateParsedItem(idx, 'unit', e.target.value)}
+                        className="w-full border-2 border-vt-ink bg-white px-3 py-3 font-sans text-lg text-vt-ink focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-mono text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Quantity</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={item.quantity}
+                        onChange={(e) => updateParsedItem(idx, 'quantity', e.target.value)}
+                        className="w-full border-2 border-vt-ink bg-white px-3 py-3 font-mono text-lg text-vt-ink focus:outline-none"
+                      />
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="block font-mono text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Program</label>
+                      <div className="flex gap-3">
+                        <button
+                          type="button"
+                          onClick={() => updateParsedItem(idx, 'program', 'pantry')}
+                          className={`px-4 py-3 border-2 border-vt-ink font-mono font-bold uppercase ${item.program === 'pantry' ? 'bg-vt-maroon text-vt-cream' : 'bg-white text-vt-ink'}`}
+                        >
+                          Pantry
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => updateParsedItem(idx, 'program', 'grocery')}
+                          className={`px-4 py-3 border-2 border-vt-ink font-mono font-bold uppercase ${item.program === 'grocery' ? 'bg-vt-orange text-vt-ink' : 'bg-white text-vt-ink'}`}
+                        >
+                          Grocery
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                </div>
-                <div className="text-left sm:text-right mt-4 sm:mt-0">
-                  <p className="font-mono font-extrabold text-vt-maroon text-4xl">
-                    {item.quantity} <span className="text-xl text-vt-ink">{item.unit}</span>
-                  </p>
-                </div>
+                ) : (
+                  <>
+                    <div>
+                      <p className="font-sans font-bold text-vt-ink text-2xl">{item.name}</p>
+                      <div className="flex items-center gap-3 mt-3 flex-wrap">
+                        <span className="font-mono text-sm font-bold uppercase tracking-widest text-gray-600">{item.category}</span>
+                        <span className="w-2 h-2 bg-vt-ink rounded-full"></span>
+                        <span className="font-mono text-sm font-bold uppercase tracking-widest bg-vt-orange text-vt-ink px-3 py-1 border-2 border-vt-ink">{item.program}</span>
+                        {('vendor' in item && item.vendor) || (mode === 'text' && textVendor.trim()) ? (
+                          <span className="font-mono text-xs font-bold uppercase tracking-widest border-2 border-vt-ink px-3 py-1">
+                            Vendor: {String('vendor' in item && item.vendor ? item.vendor : textVendor.trim())}
+                          </span>
+                        ) : null}
+                        {'source_line' in item && item.source_line ? (
+                          <span className="font-mono text-xs font-bold uppercase tracking-widest border-2 border-vt-ink px-3 py-1">
+                            Invoice line
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+                    <div className="text-left sm:text-right mt-4 sm:mt-0">
+                      <p className="font-mono font-extrabold text-vt-maroon text-4xl">
+                        {item.quantity} <span className="text-xl text-vt-ink">{item.unit}</span>
+                      </p>
+                    </div>
+                  </>
+                )}
               </div>
             ))}
           </div>
