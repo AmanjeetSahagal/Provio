@@ -1,4 +1,4 @@
-import { addDoc, collection, doc, getDocs, writeBatch } from 'firebase/firestore';
+import { collection, doc, getDocs, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { CheckpointRecord, CheckpointSummary, InventoryItem } from '../types';
 
@@ -54,17 +54,47 @@ export async function getCurrentInventorySnapshot(rolloverYear?: string): Promis
   return buildSnapshot(items, rolloverYear);
 }
 
-export async function createCheckpoint() {
-  const { baselineItems, summary } = await getCurrentInventorySnapshot();
+async function getActiveBaselineId() {
+  const checkpointsSnapshot = await getDocs(collection(db, 'checkpoints'));
+  const activeCheckpoint = checkpointsSnapshot.docs.find((snapshot) => {
+    const data = snapshot.data() as CheckpointRecord;
+    return Boolean(data.is_active_baseline);
+  });
 
-  await addDoc(collection(db, 'checkpoints'), {
-    created_at: new Date().toISOString(),
+  return {
+    activeBaselineId: activeCheckpoint?.id,
+    checkpointSnapshots: checkpointsSnapshot.docs,
+  };
+}
+
+export async function createCheckpoint() {
+  const timestamp = new Date().toISOString();
+  const { baselineItems, summary } = await getCurrentInventorySnapshot();
+  const { activeBaselineId, checkpointSnapshots } = await getActiveBaselineId();
+  const batch = writeBatch(db);
+  const checkpointRef = doc(collection(db, 'checkpoints'));
+
+  checkpointSnapshots.forEach((snapshot) => {
+    const data = snapshot.data() as CheckpointRecord;
+    if (data.is_active_baseline) {
+      batch.update(snapshot.ref, {
+        is_active_baseline: false,
+      });
+    }
+  });
+
+  batch.set(checkpointRef, {
+    created_at: timestamp,
     type: 'checkpoint',
     label: 'Manual checkpoint',
-    notes: 'Manual baseline saved from the current inventory state.',
+    notes: 'Manual baseline saved from the current inventory state. This baseline is now the active starting point for future comparisons.',
     baseline_items: baselineItems,
     summary,
+    is_active_baseline: true,
+    previous_baseline_id: activeBaselineId || null,
   });
+
+  await batch.commit();
 }
 
 export async function createYearEndRollover(rolloverYear: string) {
@@ -72,17 +102,29 @@ export async function createYearEndRollover(rolloverYear: string) {
   const itemsSnapshot = await getDocs(collection(db, 'items'));
   const items = itemsSnapshot.docs.map((snapshot) => ({ id: snapshot.id, ...snapshot.data() } as InventoryItem));
   const { baselineItems, summary } = buildSnapshot(items, rolloverYear);
+  const { activeBaselineId, checkpointSnapshots } = await getActiveBaselineId();
 
   const batch = writeBatch(db);
   const checkpointRef = doc(collection(db, 'checkpoints'));
+
+  checkpointSnapshots.forEach((snapshot) => {
+    const data = snapshot.data() as CheckpointRecord;
+    if (data.is_active_baseline) {
+      batch.update(snapshot.ref, {
+        is_active_baseline: false,
+      });
+    }
+  });
 
   batch.set(checkpointRef, {
     created_at: timestamp,
     type: 'rollover',
     label: `${rolloverYear} year-end rollover`,
-    notes: `Carry-forward baseline created for ${rolloverYear}.`,
+    notes: `Carry-forward baseline created for ${rolloverYear}. This rollover is now the active baseline for future comparisons.`,
     baseline_items: baselineItems,
     summary,
+    is_active_baseline: true,
+    previous_baseline_id: activeBaselineId || null,
   });
 
   items.forEach((item) => {

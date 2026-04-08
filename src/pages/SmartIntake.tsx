@@ -1,9 +1,9 @@
-import { useState } from 'react';
-import { addDoc, collection, doc, getDocs, updateDoc } from 'firebase/firestore';
-import { Camera, Mic, Send, CheckCircle2, Loader2, FileText, Upload, Sparkles } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { addDoc, collection, doc, getDocs, onSnapshot, orderBy, query, updateDoc } from 'firebase/firestore';
+import { Camera, Mic, Send, CheckCircle2, Loader2, FileText, Upload, Sparkles, ReceiptText } from 'lucide-react';
 import { db } from '../firebase';
 import { parseInventoryText, parseInvoiceInput } from '../services/gemini';
-import { InventoryItem, InvoiceLineItem, ParsedInventoryItem } from '../types';
+import { InventoryItem, InvoiceLineItem, InvoiceRecord, ParsedInventoryItem } from '../types';
 import { syncLowStockAlert } from '../services/alerts';
 
 type IntakeMode = 'text' | 'invoice';
@@ -38,6 +38,7 @@ function fileToBase64(file: File): Promise<UploadFile> {
 export default function SmartIntake() {
   const [mode, setMode] = useState<IntakeMode>('invoice');
   const [input, setInput] = useState('');
+  const [textVendor, setTextVendor] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [parsedItems, setParsedItems] = useState<ParsedInventoryItem[]>([]);
   const [isSaved, setIsSaved] = useState(false);
@@ -49,11 +50,23 @@ export default function SmartIntake() {
   const [invoiceText, setInvoiceText] = useState('');
   const [invoiceFile, setInvoiceFile] = useState<UploadFile | null>(null);
   const [invoiceStatus, setInvoiceStatus] = useState<'idle' | 'loaded' | 'parsing' | 'parsed'>('idle');
+  const [recentInvoices, setRecentInvoices] = useState<InvoiceRecord[]>([]);
+  const [selectedInvoiceId, setSelectedInvoiceId] = useState('');
 
   const resetFeedback = () => {
     setIsSaved(false);
     setStatusMessage('');
   };
+
+  useEffect(() => {
+    const invoiceQuery = query(collection(db, 'invoices'), orderBy('created_at', 'desc'));
+    const unsub = onSnapshot(invoiceQuery, (snapshot) => {
+      const invoices = snapshot.docs.map((invoice) => ({ id: invoice.id, ...invoice.data() } as InvoiceRecord));
+      setRecentInvoices(invoices);
+      setSelectedInvoiceId((current) => current || invoices[0]?.id || '');
+    });
+    return unsub;
+  }, []);
 
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -129,6 +142,17 @@ export default function SmartIntake() {
       if (mode === 'invoice') {
         const itemsSnapshot = await getDocs(collection(db, 'items'));
         const existingItems = itemsSnapshot.docs.map((item) => ({ id: item.id, ...item.data() } as InventoryItem));
+        const invoiceDocRef = await addDoc(collection(db, 'invoices'), {
+          vendor: invoiceVendor,
+          date: invoiceDate,
+          items: [],
+          raw_text: invoiceText,
+          file_name: invoiceFile?.name,
+          status: 'parsed',
+          transaction_count: 0,
+          created_at: new Date().toISOString(),
+        });
+        const savedItems: InvoiceLineItem[] = [];
 
         for (const item of parsedItems as InvoiceLineItem[]) {
           const match = existingItems.find(
@@ -159,7 +183,8 @@ export default function SmartIntake() {
               threshold: match.low_stock_threshold,
             });
 
-            await addDoc(collection(db, 'transactions'), {
+            const transactionRef = await addDoc(collection(db, 'transactions'), {
+              invoice_id: invoiceDocRef.id,
               item_id: match.id,
               type: 'invoice',
               quantity: Number(item.quantity),
@@ -167,6 +192,11 @@ export default function SmartIntake() {
               vendor: invoiceVendor || undefined,
               timestamp: new Date().toISOString(),
               notes: `Invoice intake${invoiceFile ? ` // ${invoiceFile.name}` : ''}`,
+            });
+            savedItems.push({
+              ...item,
+              linked_item_id: match.id,
+              transaction_id: transactionRef.id,
             });
             continue;
           }
@@ -190,7 +220,8 @@ export default function SmartIntake() {
             threshold: 10,
           });
 
-          await addDoc(collection(db, 'transactions'), {
+          const transactionRef = await addDoc(collection(db, 'transactions'), {
+            invoice_id: invoiceDocRef.id,
             item_id: docRef.id,
             type: 'invoice',
             quantity: Number(item.quantity),
@@ -199,15 +230,17 @@ export default function SmartIntake() {
             timestamp: new Date().toISOString(),
             notes: `Invoice intake${invoiceFile ? ` // ${invoiceFile.name}` : ''}`,
           });
+          savedItems.push({
+            ...item,
+            linked_item_id: docRef.id,
+            transaction_id: transactionRef.id,
+          });
         }
 
-        await addDoc(collection(db, 'invoices'), {
-          vendor: invoiceVendor,
-          date: invoiceDate,
-          items: parsedItems,
-          raw_text: invoiceText,
-          file_name: invoiceFile?.name,
-          created_at: new Date().toISOString(),
+        await updateDoc(doc(db, 'invoices', invoiceDocRef.id), {
+          items: savedItems,
+          status: 'saved',
+          transaction_count: savedItems.length,
         });
 
         setInvoiceText('');
@@ -216,6 +249,7 @@ export default function SmartIntake() {
         setInvoiceDefaultProgram('pantry');
         setInvoiceFile(null);
         setInvoiceStatus('idle');
+        setSelectedInvoiceId(invoiceDocRef.id);
       } else {
         for (const item of parsedItems) {
           const isPantry = item.program === 'pantry';
@@ -224,6 +258,7 @@ export default function SmartIntake() {
             name: item.name,
             category: item.category || 'Uncategorized',
             unit: item.unit || 'items',
+            vendor: textVendor.trim() || undefined,
             low_stock_threshold: 10,
             pantry_quantity: isPantry ? Number(item.quantity) : 0,
             grocery_quantity: !isPantry ? Number(item.quantity) : 0,
@@ -243,12 +278,14 @@ export default function SmartIntake() {
             type: 'add',
             quantity: Number(item.quantity),
             to_program: item.program || 'pantry',
+            vendor: textVendor.trim() || undefined,
             timestamp: new Date().toISOString(),
             notes: 'Added via Smart Intake',
           });
         }
 
         setInput('');
+        setTextVendor('');
       }
 
       setIsSaved(true);
@@ -261,6 +298,8 @@ export default function SmartIntake() {
       setIsProcessing(false);
     }
   };
+
+  const selectedInvoice = recentInvoices.find((invoice) => invoice.id === selectedInvoiceId) || recentInvoices[0] || null;
 
   const switchMode = (nextMode: IntakeMode) => {
     setMode(nextMode);
@@ -309,7 +348,17 @@ export default function SmartIntake() {
         </div>
 
         {mode === 'text' ? (
-          <div className="relative">
+          <div className="space-y-6">
+            <div>
+              <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Vendor</label>
+              <input
+                value={textVendor}
+                onChange={(e) => setTextVendor(e.target.value)}
+                placeholder="Optional vendor or donation source"
+                className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-sans text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all"
+              />
+            </div>
+            <div className="relative">
             <div className="absolute top-0 left-0 bg-vt-ink text-vt-cream font-mono text-xs font-bold uppercase tracking-widest px-4 py-2 border-b-4 border-r-4 border-vt-ink z-10">
               RAW INPUT BUFFER
             </div>
@@ -326,6 +375,7 @@ export default function SmartIntake() {
             >
               {isProcessing && !parsedItems.length ? <Loader2 className="animate-spin" size={32} /> : <Send size={32} />}
             </button>
+          </div>
           </div>
         ) : (
           <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(280px,0.75fr)] gap-8 items-start">
@@ -432,6 +482,43 @@ export default function SmartIntake() {
                 <li>Review parsed quantities before committing</li>
               </ul>
             </div>
+
+            <div className="border-4 border-vt-ink bg-vt-cream p-6 space-y-5 shadow-[8px_8px_0px_0px_#1A1516]">
+              <div className="border-b-4 border-vt-ink pb-4">
+                <h2 className="font-serif text-2xl font-bold text-vt-ink uppercase">Invoice Audit Trail</h2>
+                <p className="font-mono text-xs font-bold uppercase tracking-widest text-gray-500 mt-2">Recent invoice imports and linked records</p>
+              </div>
+              {recentInvoices.length === 0 ? (
+                <div className="border-4 border-dashed border-vt-ink bg-white p-6 text-center font-mono text-sm uppercase tracking-widest text-gray-500">
+                  No invoice imports yet.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {recentInvoices.slice(0, 4).map((invoice) => (
+                    <button
+                      key={invoice.id}
+                      type="button"
+                      onClick={() => setSelectedInvoiceId(invoice.id)}
+                      className={`w-full text-left border-4 border-vt-ink px-4 py-4 transition-colors ${
+                        selectedInvoice?.id === invoice.id ? 'bg-vt-orange/20' : 'bg-white hover:bg-vt-orange/10'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <p className="font-sans text-lg font-bold text-vt-ink">{invoice.vendor || 'Unknown vendor'}</p>
+                          <p className="font-mono text-xs font-bold uppercase tracking-widest text-gray-500 mt-2">
+                            {invoice.date} // {invoice.transaction_count || invoice.items?.length || 0} linked lines
+                          </p>
+                        </div>
+                        <span className="font-mono text-xs font-bold uppercase tracking-widest border-2 border-vt-ink px-2 py-1 bg-vt-cream">
+                          {invoice.status || 'saved'}
+                        </span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -459,6 +546,11 @@ export default function SmartIntake() {
                     <span className="font-mono text-sm font-bold uppercase tracking-widest text-gray-600">{item.category}</span>
                     <span className="w-2 h-2 bg-vt-ink rounded-full"></span>
                     <span className="font-mono text-sm font-bold uppercase tracking-widest bg-vt-orange text-vt-ink px-3 py-1 border-2 border-vt-ink">{item.program}</span>
+                    {('vendor' in item && item.vendor) || (mode === 'text' && textVendor.trim()) ? (
+                      <span className="font-mono text-xs font-bold uppercase tracking-widest border-2 border-vt-ink px-3 py-1">
+                        Vendor: {String('vendor' in item && item.vendor ? item.vendor : textVendor.trim())}
+                      </span>
+                    ) : null}
                     {'source_line' in item && item.source_line ? (
                       <span className="font-mono text-xs font-bold uppercase tracking-widest border-2 border-vt-ink px-3 py-1">
                         Invoice line
@@ -490,6 +582,77 @@ export default function SmartIntake() {
           </div>
         </div>
       )}
+
+      {mode === 'invoice' && selectedInvoice ? (
+        <div className="bg-vt-cream border-4 border-vt-ink p-8 shadow-[12px_12px_0px_0px_#861F41]">
+          <div className="border-b-4 border-vt-ink pb-4 mb-8 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div>
+              <h2 className="font-serif text-3xl font-bold text-vt-ink uppercase">Selected Invoice Audit</h2>
+              <p className="font-mono text-xs font-bold uppercase tracking-widest text-gray-500 mt-2">
+                {selectedInvoice.vendor || 'Unknown vendor'} // {selectedInvoice.date}
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <ReceiptText size={22} className="text-vt-maroon" />
+              <span className="font-mono text-xs font-bold uppercase tracking-widest border-2 border-vt-ink px-3 py-2 bg-white">
+                {selectedInvoice.transaction_count || selectedInvoice.items?.length || 0} linked transactions
+              </span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+            <div className="border-4 border-vt-ink bg-white p-4">
+              <p className="font-mono text-xs font-bold uppercase tracking-widest text-gray-500">Saved At</p>
+              <p className="font-sans text-base font-bold text-vt-ink mt-3">{selectedInvoice.created_at.slice(0, 16).replace('T', ' ')}</p>
+            </div>
+            <div className="border-4 border-vt-ink bg-white p-4">
+              <p className="font-mono text-xs font-bold uppercase tracking-widest text-gray-500">File</p>
+              <p className="font-sans text-base font-bold text-vt-ink mt-3">{selectedInvoice.file_name || 'No file attached'}</p>
+            </div>
+            <div className="border-4 border-vt-ink bg-white p-4">
+              <p className="font-mono text-xs font-bold uppercase tracking-widest text-gray-500">Status</p>
+              <p className="font-sans text-base font-bold text-vt-ink mt-3">{selectedInvoice.status || 'saved'}</p>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            {selectedInvoice.items?.length ? (
+              selectedInvoice.items.map((item, idx) => (
+                <div key={`${selectedInvoice.id}-${idx}`} className="border-4 border-vt-ink bg-white p-5">
+                  <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                    <div>
+                      <p className="font-sans text-xl font-bold text-vt-ink">{item.name}</p>
+                      <div className="flex flex-wrap items-center gap-3 mt-3">
+                        <span className="font-mono text-xs font-bold uppercase tracking-widest border-2 border-vt-ink px-3 py-1 bg-vt-orange">
+                          {item.quantity} {item.unit}
+                        </span>
+                        <span className="font-mono text-xs font-bold uppercase tracking-widest border-2 border-vt-ink px-3 py-1 bg-white">
+                          {item.program}
+                        </span>
+                        <span className="font-mono text-xs font-bold uppercase tracking-widest border-2 border-vt-ink px-3 py-1 bg-white">
+                          {item.category}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <p className="font-mono text-xs font-bold uppercase tracking-widest text-gray-500">
+                        Item Link: {item.linked_item_id || 'not linked'}
+                      </p>
+                      <p className="font-mono text-xs font-bold uppercase tracking-widest text-gray-500">
+                        Tx Link: {item.transaction_id || 'not linked'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="border-4 border-dashed border-vt-ink bg-white p-6 text-center font-mono text-sm uppercase tracking-widest text-gray-500">
+                No linked invoice items yet.
+              </div>
+            )}
+          </div>
+        </div>
+      ) : null}
 
       {isSaved && (
         <div className="bg-green-400 text-vt-ink p-6 border-4 border-vt-ink flex items-center gap-6 shadow-[8px_8px_0px_0px_#1A1516]">

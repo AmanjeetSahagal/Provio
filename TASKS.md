@@ -21,11 +21,11 @@ This file captures the current implementation order derived from the PRD.
 ## Next Product Gaps
 
 1. Vendor tracking on items and transactions
-   Status: next
+   Status: completed
 2. Formal checkpoint baseline behavior
-   Status: partially complete
+   Status: completed
 3. Invoice-linked audit flows
-   Status: next
+   Status: completed
 4. Voice input
    Status: next
 

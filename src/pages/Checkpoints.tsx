@@ -85,6 +85,27 @@ export default function Checkpoints() {
  .sort((a, b) => b.total - a.total)
  .slice(0, 4);
 
+ const activeBaseline = checkpoints.find((checkpoint) => checkpoint.is_active_baseline) || checkpoints[0] || null;
+ const activeBaselineMap = new Map(
+ (activeBaseline?.baseline_items || []).map((item) => [item.item_id, item]),
+ );
+ const currentItemIds = new Set(items.map((item) => item.id));
+
+ const changedItems = items.filter((item) => {
+ const baselineItem = activeBaselineMap.get(item.id);
+ if (!baselineItem) {
+ return Number(item.pantry_quantity || 0) + Number(item.grocery_quantity || 0) > 0;
+ }
+
+ return (
+ Number(item.pantry_quantity || 0) !== Number(baselineItem.pantry_qty || 0) ||
+ Number(item.grocery_quantity || 0) !== Number(baselineItem.grocery_qty || 0)
+ );
+ }).length;
+
+ const newItemsSinceBaseline = items.filter((item) => !activeBaselineMap.has(item.id)).length;
+ const removedItemsSinceBaseline = (activeBaseline?.baseline_items || []).filter((item) => !currentItemIds.has(item.item_id)).length;
+
  return (
  <div className="space-y-10 max-w-6xl mx-auto">
  <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-8 border-b-4 border-vt-ink pb-6">
@@ -110,6 +131,47 @@ export default function Checkpoints() {
  Run {rolloverYear} Rollover
  </button>
  </div>
+ </div>
+
+ <div className="bg-vt-cream border-4 border-vt-ink shadow-[12px_12px_0px_0px_#1A1516] p-8 space-y-6">
+ <div className="border-b-4 border-vt-ink pb-5">
+ <h2 className="font-serif text-3xl font-bold text-vt-ink uppercase">Active Baseline</h2>
+ <p className="font-mono text-sm font-bold uppercase tracking-widest text-gray-600 mt-3">Current comparison starting point</p>
+ </div>
+ {activeBaseline ? (
+ <div className="space-y-6">
+ <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-5">
+ <div>
+ <p className="font-serif text-3xl font-bold text-vt-ink uppercase">{activeBaseline.label || 'Baseline snapshot'}</p>
+ <p className="font-mono text-sm font-bold uppercase tracking-widest text-gray-600 mt-3">
+ Active since {format(new Date(activeBaseline.created_at), 'MMMM d, yyyy HH:mm')}
+ </p>
+ {activeBaseline.notes ? <p className="font-sans text-base text-gray-700 mt-4 max-w-3xl">{activeBaseline.notes}</p> : null}
+ </div>
+ <span className="px-6 py-3 bg-green-400 text-vt-ink border-4 border-vt-ink font-mono font-bold text-lg uppercase tracking-widest shadow-[4px_4px_0px_0px_#1A1516]">
+ Active Baseline
+ </span>
+ </div>
+ <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+ <div className="border-4 border-vt-ink bg-white p-5">
+ <p className="font-mono text-xs font-bold uppercase tracking-widest text-gray-500">Changed Items</p>
+ <p className="font-serif text-4xl font-bold text-vt-ink mt-3">{changedItems}</p>
+ </div>
+ <div className="border-4 border-vt-ink bg-white p-5">
+ <p className="font-mono text-xs font-bold uppercase tracking-widest text-gray-500">New Items</p>
+ <p className="font-serif text-4xl font-bold text-vt-ink mt-3">{newItemsSinceBaseline}</p>
+ </div>
+ <div className="border-4 border-vt-ink bg-white p-5">
+ <p className="font-mono text-xs font-bold uppercase tracking-widest text-gray-500">Missing From Current Inventory</p>
+ <p className="font-serif text-4xl font-bold text-vt-ink mt-3">{removedItemsSinceBaseline}</p>
+ </div>
+ </div>
+ </div>
+ ) : (
+ <div className="border-4 border-dashed border-vt-ink bg-white p-8 text-center font-mono text-sm uppercase tracking-widest text-gray-500">
+ No active baseline yet. Save a checkpoint to start formal comparisons.
+ </div>
+ )}
  </div>
 
  <div className="grid grid-cols-1 xl:grid-cols-[1.3fr_1fr] gap-8">
@@ -206,9 +268,9 @@ export default function Checkpoints() {
  {cp.notes ? <p className="font-sans text-base text-gray-700 mt-3 max-w-3xl">{cp.notes}</p> : null}
  </div>
  <span className={`px-6 py-3 text-vt-ink border-4 border-vt-ink font-mono font-bold text-lg uppercase tracking-widest shadow-[4px_4px_0px_0px_#1A1516] ${
- cp.type === 'rollover' ? 'bg-vt-orange' : 'bg-green-400'
+ cp.is_active_baseline ? 'bg-green-400' : cp.type === 'rollover' ? 'bg-vt-orange' : 'bg-vt-cream'
  }`}>
- {cp.type === 'rollover' ? 'Year-End Rollover' : 'Baseline Verified'}
+ {cp.is_active_baseline ? 'Active Baseline' : cp.type === 'rollover' ? 'Year-End Rollover' : 'Baseline Verified'}
  </span>
  </div>
 

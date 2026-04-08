@@ -30,6 +30,7 @@ export type TransactionRecord = {
   from_program?: string;
   to_program?: string;
   vendor?: string;
+  invoice_id?: string;
   notes?: string;
 };
 
@@ -41,6 +42,8 @@ export type InvoiceLineItem = {
   program: 'pantry' | 'grocery';
   vendor?: string;
   source_line?: string;
+  linked_item_id?: string;
+  transaction_id?: string;
 };
 
 export type InvoiceRecord = {
@@ -51,6 +54,8 @@ export type InvoiceRecord = {
   raw_text: string;
   created_at: string;
   file_name?: string;
+  status?: 'parsed' | 'saved';
+  transaction_count?: number;
 };
 
 export type AlertRecord = {
@@ -93,4 +98,6 @@ export type CheckpointRecord = {
   label?: string;
   notes?: string;
   summary?: CheckpointSummary;
+  is_active_baseline?: boolean;
+  previous_baseline_id?: string;
 };

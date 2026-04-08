@@ -122,6 +122,7 @@ export default function Dashboard() {
  {tx.type === 'rollover' ? 'year-end rollover' : tx.type} <span className="font-mono text-vt-maroon ">[{tx.quantity} units]</span>
  </p>
  <p className="font-mono text-sm text-gray-600 mt-1 uppercase">
+ {tx.vendor ? `Vendor: ${tx.vendor} // ` : ''}
  {tx.type === 'transfer'
  ? `Path: ${tx.from_program} -> ${tx.to_program}`
  : tx.type === 'rollover'

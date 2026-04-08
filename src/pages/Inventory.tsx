@@ -26,6 +26,7 @@ const emptyItem: InventoryInput = {
  name: '',
  category: 'Grains',
  unit: 'items',
+ vendor: '',
  low_stock_threshold: 10,
  pantry_quantity: 0,
  grocery_quantity: 0,
@@ -66,6 +67,7 @@ export default function Inventory() {
  name: selectedItem.name,
  category: selectedItem.category,
  unit: selectedItem.unit,
+ vendor: selectedItem.vendor || '',
  low_stock_threshold: Number(selectedItem.low_stock_threshold ?? 10),
  pantry_quantity: Number(selectedItem.pantry_quantity || 0),
  grocery_quantity: Number(selectedItem.grocery_quantity || 0),
@@ -98,6 +100,7 @@ export default function Inventory() {
  item_id: docRef.id,
  type: 'add',
  quantity: Number(newItem.pantry_quantity) + Number(newItem.grocery_quantity),
+ vendor: newItem.vendor?.trim() || undefined,
  timestamp: new Date().toISOString(),
  notes: 'Initial stock addition'
  });
@@ -134,6 +137,7 @@ export default function Inventory() {
  name: editItem.name,
  category: editItem.category,
  unit: editItem.unit,
+ vendor: editItem.vendor?.trim() || '',
  low_stock_threshold: Number(editItem.low_stock_threshold ?? 10),
  pantry_quantity: nextPantryQty,
  grocery_quantity: nextGroceryQty,
@@ -156,6 +160,7 @@ export default function Inventory() {
  quantity: totalDelta,
  from_program: totalDelta < 0 ? 'inventory' : undefined,
  to_program: totalDelta >= 0 ? 'inventory' : undefined,
+ vendor: editItem.vendor?.trim() || selectedItem.vendor || undefined,
  timestamp: new Date().toISOString(),
  notes: restock.notes || `Restock update: pantry ${pantryDelta}, grocery ${groceryDelta}`,
  });
@@ -173,8 +178,11 @@ export default function Inventory() {
 
  const filteredItems = items.filter(item => 
  item.name?.toLowerCase().includes(search.toLowerCase()) ||
- item.category?.toLowerCase().includes(search.toLowerCase())
+ item.category?.toLowerCase().includes(search.toLowerCase()) ||
+ item.vendor?.toLowerCase().includes(search.toLowerCase())
  );
+
+ const vendorOptions = Array.from(new Set(items.map((item) => item.vendor?.trim()).filter(Boolean) as string[])).sort();
 
  return (
  <>
@@ -234,6 +242,7 @@ export default function Inventory() {
  <div>
  <p className="font-sans font-bold text-vt-ink text-xl">{item.name}</p>
  <p className="font-mono text-sm text-gray-600 mt-1 uppercase">{item.unit}</p>
+ {item.vendor ? <p className="font-sans text-sm text-gray-600 mt-1">Vendor: {item.vendor}</p> : null}
  </div>
  </div>
  </td>
@@ -290,6 +299,11 @@ export default function Inventory() {
  <select value={editItem.unit} onChange={e => setEditItem({ ...editItem, unit: e.target.value })} className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-sans text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all">
  {unitOptions.map((option) => <option key={option} value={option}>{option}</option>)}
  </select>
+ </div>
+
+ <div>
+ <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Vendor</label>
+ <input list="inventory-vendors" type="text" value={editItem.vendor || ''} onChange={e => setEditItem({ ...editItem, vendor: e.target.value })} placeholder="Costco, Kroger, Food Bank..." className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-sans text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all" />
  </div>
 
  <div>
@@ -408,6 +422,10 @@ export default function Inventory() {
  </select>
  </div>
  <div>
+ <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Vendor</label>
+ <input list="inventory-vendors" type="text" value={newItem.vendor || ''} onChange={e => setNewItem({...newItem, vendor: e.target.value})} placeholder="Costco, Kroger, Food Bank..." className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-sans text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all" />
+ </div>
+ <div>
  <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Alert When Total Stock Falls Below</label>
  <select value={newItem.low_stock_threshold ?? 10} onChange={e => setNewItem({...newItem, low_stock_threshold: Number(e.target.value)})} className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-sans text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all">
  {thresholdOptions.map((option) => <option key={option} value={option}>{option}</option>)}
@@ -435,6 +453,9 @@ export default function Inventory() {
  </div>
  </div>
  )}
+ <datalist id="inventory-vendors">
+ {vendorOptions.map((vendor) => <option key={vendor} value={vendor} />)}
+ </datalist>
  </>
  );
 }
