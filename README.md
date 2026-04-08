@@ -1,17 +1,85 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# Provio
 
-# PROVIO
+Provio is an AI-assisted operations system for modern food pantries. It replaces notebook and spreadsheet workflows with a volunteer-friendly web app for intake, inventory tracking, transfers, checkpoints, and year-end rollover.
 
-AI-assisted pantry operations for intake, transfers, and audit checkpoints.
+## Current Scope
 
-## Run Locally
+- Google sign-in with Firebase Auth
+- Inventory creation, editing, restocking, and vendor tracking
+- Smart Intake for text parsing and invoice parsing
+- Program transfers between pantry and grocery
+- Low-stock alerts
+- Checkpoints and active baseline tracking
+- End-of-year rollover with carry-forward summary
+- Invoice-linked audit trail inside Smart Intake
 
-**Prerequisites:** Node.js
+## Stack
 
-1. Install dependencies:
-   `npm install`
-2. Set `VITE_GEMINI_API_KEY` in `.env.local`
-3. Run the app:
-   `npm run dev`
+- React 19
+- Vite
+- Firebase Auth + Firestore
+- Gemini API via `@google/genai`
+- TypeScript
+
+## Local Setup
+
+Prerequisites:
+
+- Node.js 20+
+- npm
+
+Install and run:
+
+```bash
+npm install
+npm run dev
+```
+
+The dev server runs on:
+
+```text
+http://localhost:3000
+```
+
+## Environment Variables
+
+Create `.env.local` in the project root:
+
+```bash
+VITE_GEMINI_API_KEY=your_gemini_key_here
+```
+
+`firebase-applet-config.json` is used for the Firebase client config in this project.
+
+## Scripts
+
+```bash
+npm run dev
+npm run build
+npm run preview
+npm run lint
+```
+
+## Product Status
+
+Completed:
+
+- Inventory edit and restock workflows
+- Invoice workflow in Smart Intake
+- Low-stock alerts
+- End-of-year rollover
+- Vendor tracking
+- Formal checkpoint baseline behavior
+- Invoice-linked audit flows
+
+Remaining:
+
+- Voice input
+
+## Main App Areas
+
+- `Dashboard`: category totals, restock notices, recent activity
+- `Inventory`: create, edit, search, vendor tagging, stock updates
+- `Smart Intake`: invoice parsing, text parsing, invoice audit trail
+- `Transfers`: move stock between pantry and grocery
+- `Checkpoints`: save baselines, compare against active baseline, run rollover
