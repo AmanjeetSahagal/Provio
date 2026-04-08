@@ -2,6 +2,7 @@ import { ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { LayoutDashboard, Package, ArrowRightLeft, Camera, Flag, LogOut } from 'lucide-react';
 import { logout } from '../firebase';
+import provioLogo from '../Glowing leaf circle on dark background.png';
 
 export default function Layout({ children }: { children: ReactNode }) {
  const location = useLocation();
@@ -20,7 +21,7 @@ export default function Layout({ children }: { children: ReactNode }) {
  <aside className="w-72 bg-vt-cream border-r-4 border-vt-ink flex flex-col z-20 shadow-[8px_0px_0px_0px_#861F41] ">
  <div className="p-6 border-b-4 border-vt-ink bg-vt-maroon text-vt-cream ">
  <h1 className="font-serif text-4xl font-bold tracking-tight flex items-center gap-3">
- <Package size={32} />
+ <img src={provioLogo} alt="Provio logo" className="h-10 w-10 rounded-full border-2 border-vt-cream object-cover" />
  PROVIO
  </h1>
  <p className="font-mono text-xs mt-2 font-bold uppercase tracking-widest border-t-2 border-vt-cream/30 pt-2">

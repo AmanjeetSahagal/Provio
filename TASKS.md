@@ -27,7 +27,7 @@ This file captures the current implementation order derived from the PRD.
 3. Invoice-linked audit flows
    Status: completed
 4. Voice input
-   Status: next
+   Status: completed
 
 ## MVP Already Present
 

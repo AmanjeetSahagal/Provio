@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { addDoc, collection, doc, getDocs, onSnapshot, orderBy, query, updateDoc } from 'firebase/firestore';
 import { Camera, Mic, Send, CheckCircle2, Loader2, FileText, Upload, Sparkles, ReceiptText } from 'lucide-react';
 import { db } from '../firebase';
@@ -6,7 +6,18 @@ import { parseInventoryText, parseInvoiceInput } from '../services/gemini';
 import { InventoryItem, InvoiceLineItem, InvoiceRecord, ParsedInventoryItem } from '../types';
 import { syncLowStockAlert } from '../services/alerts';
 
-type IntakeMode = 'text' | 'invoice';
+type IntakeMode = 'text' | 'voice' | 'invoice';
+
+type SpeechRecognitionConstructor = new () => {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
+  onerror: ((event: { error: string }) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+};
 
 type UploadFile = {
   name: string;
@@ -39,6 +50,9 @@ export default function SmartIntake() {
   const [mode, setMode] = useState<IntakeMode>('invoice');
   const [input, setInput] = useState('');
   const [textVendor, setTextVendor] = useState('');
+  const [voiceTranscript, setVoiceTranscript] = useState('');
+  const [voiceVendor, setVoiceVendor] = useState('');
+  const [isListening, setIsListening] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [parsedItems, setParsedItems] = useState<ParsedInventoryItem[]>([]);
   const [isSaved, setIsSaved] = useState(false);
@@ -52,6 +66,22 @@ export default function SmartIntake() {
   const [invoiceStatus, setInvoiceStatus] = useState<'idle' | 'loaded' | 'parsing' | 'parsed'>('idle');
   const [recentInvoices, setRecentInvoices] = useState<InvoiceRecord[]>([]);
   const [selectedInvoiceId, setSelectedInvoiceId] = useState('');
+  const recognitionRef = useRef<{
+    stop: () => void;
+  } | null>(null);
+
+  const speechRecognitionCtor =
+    typeof window !== 'undefined'
+      ? ((window as Window & {
+          SpeechRecognition?: SpeechRecognitionConstructor;
+          webkitSpeechRecognition?: SpeechRecognitionConstructor;
+        }).SpeechRecognition ||
+          (window as Window & {
+            SpeechRecognition?: SpeechRecognitionConstructor;
+            webkitSpeechRecognition?: SpeechRecognitionConstructor;
+          }).webkitSpeechRecognition ||
+          null)
+      : null;
 
   const resetFeedback = () => {
     setIsSaved(false);
@@ -66,6 +96,12 @@ export default function SmartIntake() {
       setSelectedInvoiceId((current) => current || invoices[0]?.id || '');
     });
     return unsub;
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      recognitionRef.current?.stop();
+    };
   }, []);
 
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -87,20 +123,66 @@ export default function SmartIntake() {
     }
   };
 
+  const handleStartListening = () => {
+    if (!speechRecognitionCtor) {
+      setStatusMessage('Voice input is not supported in this browser.');
+      return;
+    }
+
+    resetFeedback();
+
+    const recognition = new speechRecognitionCtor();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = 'en-US';
+
+    recognition.onresult = (event) => {
+      const transcript = Array.from(event.results)
+        .map((result) => result[0]?.transcript || '')
+        .join(' ')
+        .trim();
+      setVoiceTranscript(transcript);
+    };
+
+    recognition.onerror = (event) => {
+      setIsListening(false);
+      setStatusMessage(event.error === 'not-allowed' ? 'Microphone access was blocked.' : 'Voice capture failed.');
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+    };
+
+    recognitionRef.current = recognition;
+    setIsListening(true);
+    recognition.start();
+    setStatusMessage('Listening for voice intake...');
+  };
+
+  const handleStopListening = () => {
+    recognitionRef.current?.stop();
+    setIsListening(false);
+    if (voiceTranscript.trim()) {
+      setStatusMessage('Voice note captured. Review or parse it when ready.');
+    }
+  };
+
   const handleProcess = async () => {
     resetFeedback();
     setIsProcessing(true);
 
     try {
-      if (mode === 'text') {
-        if (!input.trim()) {
-          setStatusMessage('Enter intake text before parsing.');
+      if (mode === 'text' || mode === 'voice') {
+        const sourceText = mode === 'voice' ? voiceTranscript : input;
+
+        if (!sourceText.trim()) {
+          setStatusMessage(mode === 'voice' ? 'Record a voice note before parsing.' : 'Enter intake text before parsing.');
           return;
         }
 
-        const items = await parseInventoryText(input);
+        const items = await parseInventoryText(sourceText);
         setParsedItems(items);
-        setStatusMessage(items.length ? `Parsed ${items.length} inventory items.` : 'No items detected from the provided text.');
+        setStatusMessage(items.length ? `Parsed ${items.length} inventory items.` : `No items detected from the provided ${mode === 'voice' ? 'voice note' : 'text'}.`);
         return;
       }
 
@@ -126,7 +208,7 @@ export default function SmartIntake() {
       if (mode === 'invoice' && invoiceFile) {
         setInvoiceStatus('loaded');
       }
-      setStatusMessage(mode === 'text' ? 'Failed to process text intake.' : 'Failed to parse invoice input.');
+      setStatusMessage(mode === 'invoice' ? 'Failed to parse invoice input.' : `Failed to process ${mode === 'voice' ? 'voice' : 'text'} intake.`);
     } finally {
       setIsProcessing(false);
     }
@@ -251,6 +333,9 @@ export default function SmartIntake() {
         setInvoiceStatus('idle');
         setSelectedInvoiceId(invoiceDocRef.id);
       } else {
+        const sourceVendor = mode === 'voice' ? voiceVendor.trim() : textVendor.trim();
+        const sourceNotes = mode === 'voice' ? 'Added via Voice Intake' : 'Added via Smart Intake';
+
         for (const item of parsedItems) {
           const isPantry = item.program === 'pantry';
 
@@ -258,7 +343,7 @@ export default function SmartIntake() {
             name: item.name,
             category: item.category || 'Uncategorized',
             unit: item.unit || 'items',
-            vendor: textVendor.trim() || undefined,
+            vendor: sourceVendor || undefined,
             low_stock_threshold: 10,
             pantry_quantity: isPantry ? Number(item.quantity) : 0,
             grocery_quantity: !isPantry ? Number(item.quantity) : 0,
@@ -278,22 +363,33 @@ export default function SmartIntake() {
             type: 'add',
             quantity: Number(item.quantity),
             to_program: item.program || 'pantry',
-            vendor: textVendor.trim() || undefined,
+            vendor: sourceVendor || undefined,
             timestamp: new Date().toISOString(),
-            notes: 'Added via Smart Intake',
+            notes: sourceNotes,
           });
         }
 
-        setInput('');
-        setTextVendor('');
+        if (mode === 'voice') {
+          setVoiceTranscript('');
+          setVoiceVendor('');
+        } else {
+          setInput('');
+          setTextVendor('');
+        }
       }
 
       setIsSaved(true);
       setParsedItems([]);
-      setStatusMessage(mode === 'invoice' ? 'Invoice processed and inventory updated.' : 'Records committed to database.');
+      setStatusMessage(
+        mode === 'invoice'
+          ? 'Invoice processed and inventory updated.'
+          : mode === 'voice'
+            ? 'Voice intake committed to database.'
+            : 'Records committed to database.',
+      );
     } catch (error) {
       console.error('Error saving intake items:', error);
-      setStatusMessage(mode === 'invoice' ? 'Failed to save invoice intake.' : 'Failed to save intake records.');
+      setStatusMessage(mode === 'invoice' ? 'Failed to save invoice intake.' : `Failed to save ${mode === 'voice' ? 'voice' : 'text'} intake records.`);
     } finally {
       setIsProcessing(false);
     }
@@ -307,6 +403,10 @@ export default function SmartIntake() {
     resetFeedback();
     if (nextMode === 'invoice') {
       setInvoiceStatus(invoiceFile ? 'loaded' : 'idle');
+    }
+    if (nextMode !== 'voice') {
+      recognitionRef.current?.stop();
+      setIsListening(false);
     }
   };
 
@@ -332,9 +432,12 @@ export default function SmartIntake() {
           </button>
           <button
             type="button"
-            className="py-5 bg-vt-cream border-4 border-vt-ink text-vt-ink flex items-center justify-center gap-4 font-mono font-bold text-lg uppercase tracking-wider shadow-[6px_6px_0px_0px_#1A1516] opacity-70"
+            onClick={() => switchMode('voice')}
+            className={`py-5 border-4 border-vt-ink flex items-center justify-center gap-4 font-mono font-bold text-lg uppercase tracking-wider transition-all shadow-[6px_6px_0px_0px_#1A1516] ${
+              mode === 'voice' ? 'bg-vt-ink text-vt-cream -translate-y-1' : 'bg-vt-cream text-vt-ink hover:bg-vt-ink hover:text-vt-cream'
+            }`}
           >
-            <Mic size={28} /> Voice Soon
+            <Mic size={28} /> Voice Intake
           </button>
           <button
             type="button"
@@ -376,6 +479,85 @@ export default function SmartIntake() {
               {isProcessing && !parsedItems.length ? <Loader2 className="animate-spin" size={32} /> : <Send size={32} />}
             </button>
           </div>
+          </div>
+        ) : mode === 'voice' ? (
+          <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_320px] gap-8 items-start">
+            <div className="space-y-6">
+              <div>
+                <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Vendor</label>
+                <input
+                  value={voiceVendor}
+                  onChange={(e) => setVoiceVendor(e.target.value)}
+                  placeholder="Optional vendor or donation source"
+                  className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-sans text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all"
+                />
+              </div>
+
+              <div className="border-4 border-vt-ink bg-vt-cream p-6 space-y-6">
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                  <div>
+                    <h2 className="font-serif text-3xl font-bold text-vt-ink uppercase">Voice Capture</h2>
+                    <p className="font-sans text-gray-600 mt-2">Speak naturally, then parse the transcript into inventory records.</p>
+                  </div>
+                  <div className="flex gap-3">
+                    <button
+                      type="button"
+                      onClick={handleStartListening}
+                      disabled={isListening || !speechRecognitionCtor}
+                      className="px-6 py-4 border-4 border-vt-ink bg-vt-maroon text-vt-cream font-mono font-bold uppercase hover:bg-vt-maroon-dark transition-colors disabled:opacity-50"
+                    >
+                      Start Listening
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleStopListening}
+                      disabled={!isListening}
+                      className="px-6 py-4 border-4 border-vt-ink bg-vt-orange text-vt-ink font-mono font-bold uppercase hover:bg-vt-orange-dark transition-colors disabled:opacity-50"
+                    >
+                      Stop
+                    </button>
+                  </div>
+                </div>
+
+                <div className={`border-4 border-vt-ink px-4 py-3 font-mono text-sm font-bold uppercase tracking-widest ${isListening ? 'bg-green-300 text-vt-ink' : 'bg-white text-gray-600'}`}>
+                  {speechRecognitionCtor ? (isListening ? 'Microphone active' : 'Ready to record') : 'Voice input not available in this browser'}
+                </div>
+
+                <div className="relative">
+                  <div className="absolute top-0 left-0 bg-vt-ink text-vt-cream font-mono text-xs font-bold uppercase tracking-widest px-4 py-2 border-b-4 border-r-4 border-vt-ink z-10">
+                    VOICE TRANSCRIPT
+                  </div>
+                  <textarea
+                    value={voiceTranscript}
+                    onChange={(e) => setVoiceTranscript(e.target.value)}
+                    placeholder="Your spoken note will appear here. You can edit it before parsing."
+                    className="w-full h-64 p-8 pt-16 bg-vt-cream border-4 border-vt-ink focus:ring-4 focus:ring-vt-orange outline-none resize-none font-sans text-2xl text-vt-ink placeholder-gray-400 shadow-inner"
+                  />
+                  <button
+                    onClick={handleProcess}
+                    disabled={isProcessing || !voiceTranscript.trim()}
+                    className="absolute bottom-6 right-6 bg-vt-ink text-vt-cream border-4 border-vt-ink p-4 hover:bg-vt-orange disabled:opacity-50 transition-all shadow-[6px_6px_0px_0px_#861F41] hover:-translate-y-1"
+                  >
+                    {isProcessing && !parsedItems.length ? <Loader2 className="animate-spin" size={32} /> : <Send size={32} />}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="border-4 border-vt-ink bg-vt-orange/10 p-6 space-y-4">
+              <div className="flex items-center gap-3">
+                <Mic className="text-vt-maroon" size={28} />
+                <h2 className="font-serif text-2xl font-bold text-vt-ink uppercase">Voice Tips</h2>
+              </div>
+              <p className="font-sans text-gray-700">
+                Speak in short inventory phrases like quantities, item names, and whether stock is for pantry or grocery.
+              </p>
+              <ul className="font-mono text-sm text-vt-ink space-y-3 uppercase tracking-wide">
+                <li>Pause between line items</li>
+                <li>Say pantry or grocery clearly</li>
+                <li>Edit the transcript before parsing if needed</li>
+              </ul>
+            </div>
           </div>
         ) : (
           <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(280px,0.75fr)] gap-8 items-start">

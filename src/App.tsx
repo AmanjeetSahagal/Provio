@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import {
-  Package,
   Cpu,
   ArrowRightLeft,
   ShieldCheck,
@@ -13,6 +12,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
 import { loginWithGoogle } from './firebase';
+import provioLogo from './Glowing leaf circle on dark background.png';
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import Inventory from './pages/Inventory';
@@ -100,9 +100,14 @@ function Login() {
               <div className="inline-block border-4 border-vt-ink bg-vt-cream px-4 py-2 mb-8 -rotate-2 shadow-[4px_4px_0px_0px_#1A1516]">
                 <span className="font-mono font-bold text-vt-ink tracking-widest uppercase">System v1.0</span>
               </div>
-              <h1 className="font-serif text-6xl md:text-7xl font-bold text-vt-ink leading-none tracking-tight">
-                PROVIO<span className="text-vt-maroon">.</span>
-              </h1>
+              <div className="flex items-center gap-5">
+                <div className="h-20 w-20 md:h-24 md:w-24 border-4 border-vt-ink rounded-full overflow-hidden bg-vt-maroon shadow-[6px_6px_0px_0px_#1A1516] shrink-0">
+                  <img src={provioLogo} alt="Provio logo" className="h-full w-full scale-125 object-cover" />
+                </div>
+                <h1 className="font-serif text-6xl md:text-7xl font-bold text-vt-ink leading-none tracking-tight">
+                  PROVIO<span className="text-vt-maroon">.</span>
+                </h1>
+              </div>
             </div>
 
             <div className="mt-16 relative z-10">
@@ -116,14 +121,6 @@ function Login() {
           </div>
 
           <div className="p-10 md:p-16 flex flex-col justify-center items-center text-center bg-vt-cream relative">
-            <div className="absolute top-8 right-8">
-              <Package size={48} className="text-vt-maroon opacity-20" />
-            </div>
-
-            <div className="w-24 h-24 bg-vt-maroon border-4 border-vt-ink rounded-full flex items-center justify-center mb-8 shadow-[6px_6px_0px_0px_#1A1516]">
-              <Package size={40} className="text-vt-cream" />
-            </div>
-
             <h2 className="font-serif text-3xl md:text-4xl font-bold mb-4 text-vt-ink">Authorized Access</h2>
             <p className="font-sans text-gray-600 mb-6 max-w-sm">
               Replace clipboard workflows with a single volunteer terminal for donation intake, stock routing, and checkpoint history.
@@ -227,7 +224,7 @@ function Login() {
 
       <footer className="bg-vt-cream text-vt-ink py-12 border-t-8 border-vt-ink text-center">
         <div className="max-w-5xl mx-auto px-4 flex flex-col items-center">
-          <Package size={48} className="mb-6 text-vt-maroon" />
+          <img src={provioLogo} alt="Provio logo" className="mb-6 h-12 w-12 rounded-full border-2 border-vt-ink object-cover" />
           <p className="font-mono font-bold uppercase tracking-widest text-lg mb-2">PROVIO Terminal</p>
           <p className="font-sans font-medium text-gray-600">Virginia Tech Food Pantry Operations</p>
           <div className="mt-8 pt-8 border-t-4 border-vt-ink/20 w-full max-w-md">
