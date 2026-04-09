@@ -1,6 +1,6 @@
 import { ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Package, ArrowRightLeft, Camera, Flag, LogOut } from 'lucide-react';
+import { LayoutDashboard, Package, ArrowRightLeft, Camera, Flag, LogOut, ReceiptText } from 'lucide-react';
 import { logout } from '../firebase';
 import provioLogo from '../Glowing leaf circle on dark background.png';
 
@@ -11,6 +11,7 @@ export default function Layout({ children }: { children: ReactNode }) {
  { name: 'Dashboard', path: '/', icon: LayoutDashboard },
  { name: 'Inventory', path: '/inventory', icon: Package },
  { name: 'Smart Intake', path: '/intake', icon: Camera },
+ { name: 'Invoices', path: '/invoices', icon: ReceiptText },
  { name: 'Transfers', path: '/transfers', icon: ArrowRightLeft },
  { name: 'Checkpoints', path: '/checkpoints', icon: Flag },
  ];

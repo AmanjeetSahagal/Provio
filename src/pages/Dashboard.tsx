@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { collection, onSnapshot, query, orderBy, limit, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { AlertTriangle, TrendingUp, ArrowRightLeft } from 'lucide-react';
@@ -26,7 +27,7 @@ export default function Dashboard() {
  );
  });
 
- const txQuery = query(collection(db, 'transactions'), orderBy('timestamp', 'desc'), limit(5));
+ const txQuery = query(collection(db, 'transactions'), orderBy('timestamp', 'desc'), limit(3));
  const txUnsub = onSnapshot(txQuery, (snapshot) => {
  const txs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as TransactionRecord));
  setRecentTransactions(txs);
@@ -51,6 +52,53 @@ export default function Dashboard() {
  <p className="font-mono text-gray-600 mt-3 text-lg uppercase tracking-widest">Today&apos;s overview</p>
  </div>
  
+ <div className="bg-vt-cream border-4 border-vt-ink shadow-[12px_12px_0px_0px_#1A1516] ">
+ <div className="p-6 border-b-4 border-vt-ink bg-vt-maroon flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+ <h2 className="font-serif text-2xl font-bold text-vt-cream uppercase tracking-wide">Recent Activity Log</h2>
+ <Link
+ to="/activity"
+ className="inline-flex items-center justify-center border-4 border-vt-cream bg-vt-cream px-4 py-2 font-mono text-xs font-bold uppercase tracking-widest text-vt-maroon hover:bg-vt-orange hover:text-vt-ink transition-colors"
+ >
+ View Full Log
+ </Link>
+ </div>
+ <div className="divide-y-4 divide-vt-ink ">
+ {recentTransactions.length === 0 ? (
+ <div className="p-10 text-center font-mono text-gray-500 uppercase">No recent activity detected.</div>
+ ) : (
+ recentTransactions.map((tx) => (
+ <div key={tx.id} className="p-6 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-vt-orange/10 transition-colors">
+ <div className="flex items-center gap-6">
+ <div className={`p-4 border-2 border-vt-ink ${
+ tx.type === 'transfer' ? 'bg-vt-orange text-vt-ink' :
+ tx.type === 'add' ? 'bg-green-400 text-vt-ink' :
+ 'bg-gray-300 text-vt-ink'
+ }`}>
+ {tx.type === 'transfer' ? <ArrowRightLeft size={24} /> : <TrendingUp size={24} />}
+ </div>
+ <div>
+ <p className="font-sans text-xl font-bold text-vt-ink uppercase">
+ {tx.type === 'rollover' ? 'year-end rollover' : tx.type} <span className="font-mono text-vt-maroon ">[{tx.quantity} units]</span>
+ </p>
+ <p className="font-mono text-sm text-gray-600 mt-1 uppercase">
+ {tx.vendor ? `Vendor: ${tx.vendor} // ` : ''}
+ {tx.type === 'transfer'
+ ? `Path: ${tx.from_program} -> ${tx.to_program}`
+ : tx.type === 'rollover'
+ ? tx.notes || 'Carry-forward baseline recorded'
+ : `Dest: ${tx.to_program || 'inventory'}`}
+ </p>
+ </div>
+ </div>
+ <div className="font-mono text-sm font-bold text-vt-ink border-2 border-vt-ink px-4 py-2 bg-vt-cream shadow-[4px_4px_0px_0px_#1A1516] ">
+ {tx.timestamp ? format(new Date(tx.timestamp), 'yyyy-MM-dd HH:mm') : ''}
+ </div>
+ </div>
+ ))
+ )}
+ </div>
+ </div>
+
  <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 items-stretch">
  <div className="bg-vt-cream border-4 border-vt-ink shadow-[8px_8px_0px_0px_#861F41] h-full p-6 space-y-5">
  <div className="border-b-2 border-vt-ink pb-4">
@@ -95,48 +143,6 @@ export default function Dashboard() {
  ))
  )}
  </div>
- </div>
- </div>
-
- {/* Activity Brutalist Panel */}
- <div className="bg-vt-cream border-4 border-vt-ink shadow-[12px_12px_0px_0px_#1A1516] ">
- <div className="p-6 border-b-4 border-vt-ink bg-vt-maroon ">
- <h2 className="font-serif text-2xl font-bold text-vt-cream uppercase tracking-wide">Recent Activity Log</h2>
- </div>
- <div className="divide-y-4 divide-vt-ink ">
- {recentTransactions.length === 0 ? (
- <div className="p-10 text-center font-mono text-gray-500 uppercase">No recent activity detected.</div>
- ) : (
- recentTransactions.map((tx) => (
- <div key={tx.id} className="p-6 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-vt-orange/10 transition-colors">
- <div className="flex items-center gap-6">
- <div className={`p-4 border-2 border-vt-ink ${
- tx.type === 'transfer' ? 'bg-vt-orange text-vt-ink' :
- tx.type === 'add' ? 'bg-green-400 text-vt-ink' :
- 'bg-gray-300 text-vt-ink'
- }`}>
- {tx.type === 'transfer' ? <ArrowRightLeft size={24} /> : <TrendingUp size={24} />}
- </div>
- <div>
- <p className="font-sans text-xl font-bold text-vt-ink uppercase">
- {tx.type === 'rollover' ? 'year-end rollover' : tx.type} <span className="font-mono text-vt-maroon ">[{tx.quantity} units]</span>
- </p>
- <p className="font-mono text-sm text-gray-600 mt-1 uppercase">
- {tx.vendor ? `Vendor: ${tx.vendor} // ` : ''}
- {tx.type === 'transfer'
- ? `Path: ${tx.from_program} -> ${tx.to_program}`
- : tx.type === 'rollover'
- ? tx.notes || 'Carry-forward baseline recorded'
- : `Dest: ${tx.to_program || 'inventory'}`}
- </p>
- </div>
- </div>
- <div className="font-mono text-sm font-bold text-vt-ink border-2 border-vt-ink px-4 py-2 bg-vt-cream shadow-[4px_4px_0px_0px_#1A1516] ">
- {tx.timestamp ? format(new Date(tx.timestamp), 'yyyy-MM-dd HH:mm') : ''}
- </div>
- </div>
- ))
- )}
  </div>
  </div>
  </div>

@@ -4,6 +4,41 @@ import { InvoiceLineItem, ParsedInventoryItem } from '../types';
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 const ai = apiKey ? new GoogleGenAI({ apiKey }) : null;
 const RETRY_DELAYS_MS = [400, 1200];
+const UNIT_KEYWORDS = [
+  'boxes',
+  'box',
+  'bags',
+  'bag',
+  'cans',
+  'can',
+  'bottles',
+  'bottle',
+  'packs',
+  'pack',
+  'cases',
+  'case',
+  'lbs',
+  'lb',
+  'oz',
+  'items',
+  'item',
+  'units',
+  'unit',
+  'cartons',
+  'carton',
+  'jars',
+  'jar',
+];
+
+const CATEGORY_KEYWORDS: Array<{ category: string; keywords: string[] }> = [
+  { category: 'Grains', keywords: ['rice', 'pasta', 'oats', 'cereal', 'flour'] },
+  { category: 'Canned Goods', keywords: ['beans', 'soup', 'tomato', 'corn', 'can'] },
+  { category: 'Snacks', keywords: ['bar', 'granola', 'cracker', 'chips', 'cookies'] },
+  { category: 'Produce', keywords: ['apple', 'banana', 'potato', 'onion', 'carrot'] },
+  { category: 'Protein', keywords: ['tuna', 'chicken', 'peanut', 'egg', 'tofu'] },
+  { category: 'Dairy', keywords: ['milk', 'cheese', 'yogurt', 'butter'] },
+  { category: 'Beverages', keywords: ['juice', 'tea', 'coffee', 'water'] },
+];
 
 function ensureAi() {
   if (!ai) {
@@ -20,6 +55,46 @@ function normalizeInventoryItems(parsed: unknown[]): ParsedInventoryItem[] {
     quantity: Number((item as ParsedInventoryItem).quantity || 0),
     program: (item as ParsedInventoryItem).program === 'grocery' ? 'grocery' : 'pantry',
   }));
+}
+
+function inferCategory(name: string) {
+  const lower = name.toLowerCase();
+  const match = CATEGORY_KEYWORDS.find(({ keywords }) => keywords.some((keyword) => lower.includes(keyword)));
+  return match?.category || 'Uncategorized';
+}
+
+function parseLineItems(rawText: string, defaultProgram: 'pantry' | 'grocery'): ParsedInventoryItem[] {
+  return rawText
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const quantityMatch = line.match(/(\d+(?:\.\d+)?)/);
+      const quantity = quantityMatch ? Number(quantityMatch[1]) : 1;
+      const unitMatch = UNIT_KEYWORDS.find((unit) => new RegExp(`\\b${unit}\\b`, 'i').test(line));
+      const unit = unitMatch || 'items';
+      const program =
+        /\bgrocery\b/i.test(line) ? 'grocery' : /\bpantry\b/i.test(line) ? 'pantry' : defaultProgram;
+
+      const scrubbed = line
+        .replace(/\$?\d+(?:\.\d+)?/g, ' ')
+        .replace(new RegExp(`\\b(${UNIT_KEYWORDS.join('|')})\\b`, 'gi'), ' ')
+        .replace(/\b(pantry|grocery)\b/gi, ' ')
+        .replace(/[,|-]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      const name = scrubbed.length ? scrubbed.trim() : 'Unknown item';
+
+      return {
+        name,
+        quantity,
+        unit,
+        category: inferCategory(name),
+        program,
+      };
+    })
+    .filter((item) => item.name && item.quantity > 0);
 }
 
 function parseJsonArrayResponse(responseText: string) {
@@ -87,6 +162,10 @@ export const parseInventoryText = async (text: string): Promise<ParsedInventoryI
     return normalizeInventoryItems(parsed);
   } catch (error) {
     console.error("Error parsing inventory text:", error);
+    const fallback = parseLineItems(text, 'pantry');
+    if (fallback.length > 0) {
+      return fallback;
+    }
     throw new Error(error instanceof Error ? error.message : 'Gemini could not parse the intake text.');
   }
 };
@@ -163,6 +242,12 @@ export const parseInvoiceInput = async ({
     }));
   } catch (error) {
     console.error('Error parsing invoice input:', error);
+    if (rawText?.trim()) {
+      return parseLineItems(rawText, defaultProgram).map((item) => ({
+        ...item,
+        vendor: vendor || undefined,
+      }));
+    }
     throw new Error(error instanceof Error ? error.message : 'Gemini could not parse the invoice input.');
   }
 };

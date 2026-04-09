@@ -29,6 +29,17 @@ This file captures the current implementation order derived from the PRD.
 4. Voice input
    Status: completed
 
+## Current Polish Work
+
+1. Gemini fallback and resilience
+   Status: completed
+2. Demo-ready sample inventory loading
+   Status: completed
+3. Dedicated invoice history tab
+   Status: completed
+4. Firebase deploy config and storage rules
+   Status: completed
+
 ## MVP Already Present
 
 - Inventory creation and search

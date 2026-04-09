@@ -4,6 +4,7 @@ import { db } from '../firebase';
 import { Plus, Search, Package, PencilLine, Boxes, CheckCircle2 } from 'lucide-react';
 import { InventoryInput, InventoryItem } from '../types';
 import { syncLowStockAlert } from '../services/alerts';
+import { seedSampleInventory } from '../services/demoData';
 
 const categoryOptions = [
  'Grains',
@@ -47,6 +48,7 @@ export default function Inventory() {
  const [editItem, setEditItem] = useState<InventoryInput>(emptyItem);
  const [restock, setRestock] = useState(emptyRestock);
  const [isSaving, setIsSaving] = useState(false);
+ const [isSeeding, setIsSeeding] = useState(false);
  const [statusMessage, setStatusMessage] = useState('');
 
  useEffect(() => {
@@ -184,6 +186,20 @@ export default function Inventory() {
 
  const vendorOptions = Array.from(new Set(items.map((item) => item.vendor?.trim()).filter(Boolean) as string[])).sort();
 
+ const handleSeedSamples = async () => {
+ setIsSeeding(true);
+ setStatusMessage('');
+ try {
+ await seedSampleInventory();
+ setStatusMessage('Sample inventory loaded.');
+ } catch (error) {
+ console.error('Error loading sample inventory:', error);
+ setStatusMessage('Failed to load sample inventory.');
+ } finally {
+ setIsSeeding(false);
+ }
+ };
+
  return (
  <>
  <div className="space-y-10">
@@ -192,6 +208,15 @@ export default function Inventory() {
  <h1 className="font-serif text-5xl font-bold text-vt-ink uppercase tracking-tight">Inventory</h1>
  <p className="font-mono text-gray-600 mt-3 text-lg uppercase tracking-widest">Current stock</p>
  </div>
+ <div className="flex flex-wrap gap-3">
+ <button
+ onClick={handleSeedSamples}
+ disabled={isSeeding}
+ className="bg-vt-orange text-vt-ink border-4 border-vt-ink px-6 py-3 font-mono font-bold uppercase flex items-center gap-3 hover:bg-vt-orange-dark hover:-translate-y-1 shadow-[6px_6px_0px_0px_#1A1516] transition-all disabled:opacity-60 disabled:hover:translate-y-0"
+ >
+ <Boxes size={24} />
+ {isSeeding ? 'Loading...' : 'Load Sample Data'}
+ </button>
  <button 
  onClick={() => setIsAdding(true)}
  className="bg-vt-maroon text-vt-cream border-4 border-vt-ink px-6 py-3 font-mono font-bold uppercase flex items-center gap-3 hover:bg-vt-maroon-dark hover:-translate-y-1 shadow-[6px_6px_0px_0px_#1A1516] transition-all"
@@ -199,6 +224,7 @@ export default function Inventory() {
  <Plus size={24} />
  New Record
  </button>
+ </div>
  </div>
 
  <div className="bg-vt-cream border-4 border-vt-ink p-4 shadow-[8px_8px_0px_0px_#E87722] flex items-center gap-4">

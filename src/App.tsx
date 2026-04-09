@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import {
   Cpu,
@@ -14,11 +14,14 @@ import { useAuth } from './hooks/useAuth';
 import { loginWithGoogle } from './firebase';
 import provioLogo from './Glowing leaf circle on dark background.png';
 import Layout from './components/Layout';
-import Dashboard from './pages/Dashboard';
-import Inventory from './pages/Inventory';
-import SmartIntake from './pages/SmartIntake';
-import Transfers from './pages/Transfers';
-import Checkpoints from './pages/Checkpoints';
+
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const Inventory = lazy(() => import('./pages/Inventory'));
+const SmartIntake = lazy(() => import('./pages/SmartIntake'));
+const Transfers = lazy(() => import('./pages/Transfers'));
+const Checkpoints = lazy(() => import('./pages/Checkpoints'));
+const Invoices = lazy(() => import('./pages/Invoices'));
+const ActivityLog = lazy(() => import('./pages/ActivityLog'));
 
 const capabilityCards = [
   {
@@ -256,14 +259,24 @@ export default function App() {
   return (
     <Router>
       <Layout>
-        <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/inventory" element={<Inventory />} />
-          <Route path="/intake" element={<SmartIntake />} />
-          <Route path="/transfers" element={<Transfers />} />
-          <Route path="/checkpoints" element={<Checkpoints />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+        <Suspense
+          fallback={
+            <div className="min-h-[50vh] flex items-center justify-center">
+              <div className="font-mono text-xl font-bold uppercase tracking-widest text-vt-maroon">Loading module...</div>
+            </div>
+          }
+        >
+          <Routes>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/inventory" element={<Inventory />} />
+            <Route path="/intake" element={<SmartIntake />} />
+            <Route path="/transfers" element={<Transfers />} />
+            <Route path="/checkpoints" element={<Checkpoints />} />
+            <Route path="/invoices" element={<Invoices />} />
+            <Route path="/activity" element={<ActivityLog />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Suspense>
       </Layout>
     </Router>
   );
