@@ -1,120 +1,43 @@
 ## Inspiration
 
-Provio was built around a specific operational problem at the VT Food Pantry. The pantry runs two programs, an open-hours pantry and a grocery-style setup, and inventory was being tracked in a physical notebook and then re-entered manually into Excel. That workflow is slow, repetitive, and error-prone, especially when the people entering the data are volunteers rather than trained technical staff.
+Provio was inspired by a real operational problem at the VT Food Pantry. The pantry runs two programs, an open-hours pantry and a grocery-style setup, and inventory was being tracked in a physical notebook before being re-entered manually into Excel. That process is repetitive, slow, and easy to get wrong, especially when the people doing the work are volunteers rather than trained technical staff.
 
-The prompt was clear: build a system that a non-technical volunteer could actually use, while still handling the real operational details the pantry needs. That meant we were not trying to make a generic inventory dashboard. We were trying to replace a fragile notebook-to-spreadsheet process with a workflow-first tool that fits how the pantry actually operates.
+We wanted to build something that did more than digitize a spreadsheet. The goal was to create a system that fits how a pantry actually works: intake, restocking, transfers, invoice tracking, checkpoints, and rollover, all in one place, and all simple enough for a non-technical volunteer to use.
 
-## What We Built
+## What it does
 
-We built Provio, an AI-assisted pantry operations system that covers the required workflows from the prompt:
+Provio is an AI-assisted pantry operations system built for modern food pantry workflows. It lets staff create and manage inventory with item name, vendor, weight, units, category, pricing, and pantry or grocery assignment. It also supports quick stock updates for existing items so volunteers do not have to re-enter the same item repeatedly.
 
-- inventory creation with item name, vendor, weight, units, category, pricing, and pantry or grocery assignment
-- quick restocking of existing items without re-entering them from scratch
-- vendor invoice tracking with scanned invoice parsing and approved invoice history
-- transfers between pantry and grocery programs
-- periodic checkpoints that establish a new baseline
-- end-of-year rollover that calculates totals and carries inventory forward
+Beyond basic inventory, Provio supports vendor invoice tracking, invoice parsing, transfers between pantry and grocery, low-stock alerts, checkpoints that define new inventory baselines, and year-end rollover that calculates totals and carries remaining stock forward. It also includes voice and text intake flows, recent activity history, and invoice-linked audit records.
 
-We also added supporting workflows that improve day-to-day usability:
+## How we built it
 
-- voice intake
-- text intake
-- low-stock notices
-- recent activity logging
-- invoice-linked audit trails
+We built Provio with React, TypeScript, and Vite on the frontend, styled with Tailwind CSS. Firebase Authentication handles sign-in, and Firestore stores items, transactions, invoices, checkpoints, and alerts. We used Gemini to parse text and invoice content into structured inventory records, and the browser Web Speech API for voice capture before sending transcripts into the same intake flow.
 
-The result is a single app that supports intake, tracking, movement, reconciliation, and year-end continuity.
+The architecture is frontend-first. The React app handles pantry workflows and UI, Firebase Authentication controls access, Firestore stores operational data, and Gemini powers AI-assisted intake. A key product decision was to make all intake paths converge into the same review-before-save pattern so volunteers can confirm what the AI produced before anything reaches the database.
 
-## How We Built It
+## Challenges we ran into
 
-We used React, TypeScript, and Vite for the frontend, with Tailwind CSS for styling. Firebase Authentication handles sign-in, and Firestore stores items, transactions, invoices, checkpoints, and alerts.
+One major challenge was making the app operationally correct instead of building a generic CRUD demo. The pantry prompt required real workflows like transfers, invoice tracking, periodic checkpoints, and rollover, and those all needed to connect coherently rather than exist as isolated screens.
 
-The data model was designed around the pantry prompt rather than a generic product catalog. Items now carry:
+Another challenge was usability. Because the intended users are non-technical volunteers, even technically correct flows could still fail if the language or layout felt too complicated. That forced us to simplify labels, add more guided structure, and rethink editing flows so the app stayed understandable without training.
 
-- operational identity: name, vendor, category, unit
-- allocation state: pantry quantity and grocery quantity
-- physical metadata: weight value and weight unit
-- pricing metadata: unit price and price basis
+We also ran into reliability issues with AI-assisted parsing. Gemini improved intake significantly, but external model calls can fail or produce inconsistent responses. We handled that by adding retries, fallback parsing behavior, and explicit review steps rather than trusting raw output directly.
 
-This let us support both of the prompt’s pricing cases:
+## Accomplishments that we're proud of
 
-$$
-\text{price basis} \in \{\text{per unit}, \text{per weight}\}
-$$
+We are proud that Provio goes beyond a basic inventory tracker and actually supports the pantry’s real operating model. It handles both pantry programs, supports invoice-driven intake, tracks vendor-linked records, logs transfers, creates checkpoints as baselines, and supports year-end carry-forward.
 
-For intake, we built a shared review-before-save flow:
+We are also proud of the product usability improvements we made during development. Inventory updates became easier through lookup-and-edit flows, stock changes became clearer with separate add and remove actions, and Smart Intake was organized so invoice scan comes first, followed by voice and then text. Those changes made the app feel more realistic for volunteer use.
 
-$$
-\text{voice/text/invoice} \rightarrow \text{parse} \rightarrow \text{review} \rightarrow \text{commit}
-$$
+## What we learned
 
-Text and invoice parsing use Gemini, while voice capture uses the browser Web Speech API and then feeds the transcript into the same parsing path. Invoice scans can be reviewed, approved, saved, and later inspected through the invoice history and audit views.
+We learned that the hardest part of building operational software is not just storing data, but modeling real workflow correctly. Pantry inventory is not only a list of items and quantities. It is a system of intake, transfers, corrections, baselines, and rollover, all of which need to be understandable over time.
 
-We also implemented the operational workflows directly in the app:
+We also learned that AI works best as assistance, not authority. The most effective pattern in the app was always parse, review, then save. That reduced friction for volunteers without removing human oversight. Finally, we learned that traceability matters: once invoices, checkpoints, and rollover are part of the system, users need to understand how inventory changed, not just what the final numbers are.
 
-- transfers write source and destination program changes
-- checkpoints establish a current baseline
-- rollover creates a new carry-forward baseline and logs rollover activity
-- low-stock alerts are generated automatically based on thresholds
+## What's next for Provio
 
-## Challenges We Faced
+The next step is real pilot testing with pantry staff and volunteers so we can measure usability, time saved, and improvements in audit and reconciliation workflows. We would also strengthen production security, expand reporting, improve invoice file retention, and refine the mobile and tablet experience for day-to-day pantry use.
 
-The first challenge was resisting the temptation to build a CRUD demo instead of the system the pantry actually needed. The prompt includes details that are easy to skip, such as program transfers, invoice tracking, periodic checkpoints, and rollover. Those are exactly the workflows that make the problem real.
-
-The second challenge was UX. The pantry context changes the bar completely. A feature is not done just because it works technically. It has to be understandable by a volunteer who may be using it under time pressure. That forced a lot of design decisions:
-
-- simpler labels
-- dropdowns where consistency matters
-- focused modal flows for adding inventory
-- clear review states before saving AI-parsed records
-- consistent navigation and sidebar behavior
-
-The third challenge was AI reliability. Gemini improved the intake experience significantly, but external AI calls can fail or return inconsistent output. We ran into transient issues such as `503 ServiceUnavailable`, so we added retry logic, fallback parsing behavior, and explicit review steps instead of trusting raw model output directly.
-
-Another challenge was traceability. Once invoices, transfers, baselines, and rollover enter the system, the app needs to explain how state changed over time. That is why we added invoice-linked transactions, active baseline tracking, and a separate full activity log page instead of only storing final quantities.
-
-## What We Learned
-
-We learned that the hard part of an operational app is not only storing information. It is modeling the workflow correctly.
-
-For this project, that meant understanding that pantry inventory is not just:
-
-$$
-\text{items} + \text{counts}
-$$
-
-It is closer to:
-
-$$
-\text{inventory state} = \text{baseline} + \text{intake} + \text{transfers} + \text{corrections} + \text{rollover logic}
-$$
-
-That shift changed how we approached the entire product. Checkpoints stopped being passive snapshots and became active baselines. Invoice uploads stopped being just file parsing and became auditable intake records. Restocking stopped being “create another item” and became “look up the item you already have and update it quickly.”
-
-We also learned that AI works best when it reduces friction without owning the final decision. The highest-quality pattern was always parse first, review second, save third.
-
-## Why This Fits the Prompt Well
-
-The prompt explicitly required a simple system for a two-program pantry with no barcode scanning and no student checkout tracking. We kept those constraints intact.
-
-Instead of expanding scope into consumer-style features, we focused on the pantry’s real workflows:
-
-- intake
-- reassignment between pantry and grocery
-- invoice-driven stock updates
-- checkpoint resets
-- year-end continuity
-
-That is what makes Provio strong relative to the original challenge. It is not trying to be everything. It is trying to be operationally correct and usable by the actual people doing the work.
-
-## Where We Ended Up
-
-Provio ended up as a workflow-first pantry operations platform rather than a basic inventory tracker. It directly addresses the VT Food Pantry’s notebook-and-Excel problem, supports both pantry programs, captures the item data the prompt asked for, and preserves the simplicity needed for non-technical volunteers.
-
-The final product is not just a nicer interface over the same manual process. It changes the process itself:
-
-$$
-\text{manual re-entry} \rightarrow \text{structured intake and tracked operations}
-$$
-
-That was the real goal of the project, and it is where the build is strongest.
+Longer term, Provio could expand beyond the VT Food Pantry into a configurable pantry operations platform for other organizations with similar workflows. The underlying model already supports intake, transfers, baselines, and rollover, so the product could grow into a reusable system for food pantries that need something more practical than notebooks and spreadsheets.
