@@ -39,6 +39,8 @@ This file captures the current implementation order derived from the PRD.
    Status: completed
 4. Firebase deploy config and storage rules
    Status: completed
+5. Explicit weight and pricing support
+   Status: completed
 
 ## MVP Already Present
 

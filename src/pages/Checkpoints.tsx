@@ -10,6 +10,7 @@ export default function Checkpoints() {
  const [checkpoints, setCheckpoints] = useState<CheckpointRecord[]>([]);
  const [isCreating, setIsCreating] = useState(false);
  const [isRollingOver, setIsRollingOver] = useState(false);
+ const [statusMessage, setStatusMessage] = useState('');
  const [items, setItems] = useState<InventoryItem[]>([]);
  const rolloverYear = String(new Date().getFullYear() + 1);
 
@@ -32,13 +33,13 @@ export default function Checkpoints() {
  if (!confirm("Are you sure you want to create a new baseline checkpoint? This will record the current state of all inventory.")) return;
  
  setIsCreating(true);
+ setStatusMessage('');
  try {
  await createCheckpoint();
-
- alert("Checkpoint created successfully!");
+ setStatusMessage('Checkpoint saved. Current inventory is now recorded as the new baseline.');
  } catch (error) {
  console.error("Error creating checkpoint:", error);
- alert("Failed to create checkpoint.");
+ setStatusMessage('Failed to create checkpoint.');
  } finally {
  setIsCreating(false);
  }
@@ -48,12 +49,13 @@ export default function Checkpoints() {
  if (!confirm(`Create the ${rolloverYear} year-end rollover baseline and log carry-forward transactions?`)) return;
 
  setIsRollingOver(true);
+ setStatusMessage('');
  try {
  await createYearEndRollover(rolloverYear);
- alert(`Rollover created for ${rolloverYear}.`);
+ setStatusMessage(`Rollover created for ${rolloverYear}. Carry-forward totals are now saved.`);
  } catch (error) {
  console.error("Error creating rollover:", error);
- alert("Failed to create rollover.");
+ setStatusMessage('Failed to create rollover.');
  } finally {
  setIsRollingOver(false);
  }
@@ -132,6 +134,19 @@ export default function Checkpoints() {
  </button>
  </div>
  </div>
+
+ <div className="border-4 border-vt-ink bg-vt-cream p-6 shadow-[8px_8px_0px_0px_#E87722]">
+ <p className="font-mono text-xs font-bold uppercase tracking-[0.25em] text-gray-500">Quick Guide</p>
+ <p className="font-sans text-lg text-vt-ink mt-3">
+ Save a checkpoint after an audit. Run rollover only when you want the current inventory to become next year&apos;s starting baseline.
+ </p>
+ </div>
+
+ {statusMessage ? (
+ <div className={`border-4 border-vt-ink px-5 py-4 shadow-[8px_8px_0px_0px_#1A1516] ${statusMessage.includes('Failed') ? 'bg-red-200 text-vt-ink' : 'bg-vt-cream text-vt-ink'}`}>
+ <p className="font-mono text-sm font-bold uppercase tracking-widest">{statusMessage}</p>
+ </div>
+ ) : null}
 
  <div className="bg-vt-cream border-4 border-vt-ink shadow-[12px_12px_0px_0px_#1A1516] p-8 space-y-6">
  <div className="border-b-4 border-vt-ink pb-5">

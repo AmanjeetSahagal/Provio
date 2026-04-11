@@ -253,6 +253,10 @@ export default function SmartIntake() {
             await updateDoc(itemRef, {
               category: item.category || match.category,
               vendor: invoiceVendor || match.vendor,
+              weight_value: item.weight_value ?? match.weight_value ?? null,
+              weight_unit: item.weight_unit || match.weight_unit || null,
+              unit_price: item.unit_price ?? match.unit_price ?? null,
+              price_basis: item.price_basis || match.price_basis || null,
               low_stock_threshold: Number(match.low_stock_threshold ?? 10),
               pantry_quantity:
                 item.program === 'pantry' ? Number(match.pantry_quantity || 0) + Number(item.quantity) : Number(match.pantry_quantity || 0),
@@ -293,6 +297,10 @@ export default function SmartIntake() {
             category: item.category || 'Uncategorized',
             unit: item.unit || 'items',
             vendor: invoiceVendor || undefined,
+            weight_value: item.weight_value ?? null,
+            weight_unit: item.weight_unit || null,
+            unit_price: item.unit_price ?? null,
+            price_basis: item.price_basis || null,
             low_stock_threshold: 10,
             pantry_quantity: item.program === 'pantry' ? Number(item.quantity) : 0,
             grocery_quantity: item.program === 'grocery' ? Number(item.quantity) : 0,
@@ -349,6 +357,10 @@ export default function SmartIntake() {
             category: item.category || 'Uncategorized',
             unit: item.unit || 'items',
             vendor: sourceVendor || undefined,
+            weight_value: item.weight_value ?? null,
+            weight_unit: item.weight_unit || null,
+            unit_price: item.unit_price ?? null,
+            price_basis: item.price_basis || null,
             low_stock_threshold: 10,
             pantry_quantity: isPantry ? Number(item.quantity) : 0,
             grocery_quantity: !isPantry ? Number(item.quantity) : 0,
@@ -415,6 +427,8 @@ export default function SmartIntake() {
               [field]:
                 field === 'quantity'
                   ? Number(value)
+                  : field === 'weight_value' || field === 'unit_price'
+                    ? (value === '' ? undefined : Number(value))
                   : field === 'program'
                     ? value === 'grocery'
                       ? 'grocery'
@@ -446,6 +460,13 @@ export default function SmartIntake() {
           <h1 className="font-serif text-5xl font-bold text-vt-ink uppercase tracking-tight">Smart Intake</h1>
           <p className="font-mono text-gray-600 mt-3 text-lg uppercase tracking-widest">Unified intake hub</p>
         </div>
+      </div>
+
+      <div className="border-4 border-vt-ink bg-vt-cream p-6 shadow-[8px_8px_0px_0px_#861F41]">
+        <p className="font-mono text-xs font-bold uppercase tracking-[0.25em] text-gray-500">How To Use</p>
+        <p className="font-sans text-lg text-vt-ink mt-3">
+          Start with invoice scan first. Voice and text are backup paths. Every intake method lands in the same review step before anything is saved.
+        </p>
       </div>
 
       <div className="bg-vt-cream border-4 border-vt-ink p-8 shadow-[12px_12px_0px_0px_#861F41] space-y-8">
@@ -585,6 +606,7 @@ export default function SmartIntake() {
                 <li>Pause between line items</li>
                 <li>Say pantry or grocery clearly</li>
                 <li>Edit the transcript before parsing if needed</li>
+                <li>Example: 12 cans black beans for pantry</li>
               </ul>
             </div>
           </div>
@@ -748,6 +770,29 @@ export default function SmartIntake() {
             </h2>
           </div>
 
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+            <div className="border-4 border-vt-ink bg-white p-4">
+              <p className="font-mono text-xs font-bold uppercase tracking-widest text-gray-500">Detected Items</p>
+              <p className="font-serif text-4xl font-bold text-vt-ink mt-2">{parsedItems.length}</p>
+            </div>
+            <div className="border-4 border-vt-ink bg-white p-4">
+              <p className="font-mono text-xs font-bold uppercase tracking-widest text-gray-500">Source</p>
+              <p className="font-sans text-lg font-bold text-vt-ink mt-2">
+                {mode === 'invoice' ? 'Invoice Scan' : mode === 'voice' ? 'Voice Intake' : 'Text Intake'}
+              </p>
+            </div>
+            <div className="border-4 border-vt-ink bg-white p-4">
+              <p className="font-mono text-xs font-bold uppercase tracking-widest text-gray-500">Vendor</p>
+              <p className="font-sans text-lg font-bold text-vt-ink mt-2">
+                {mode === 'invoice' ? invoiceVendor || 'Not provided' : mode === 'voice' ? voiceVendor || 'Not provided' : textVendor || 'Not provided'}
+              </p>
+            </div>
+            <div className="border-4 border-vt-ink bg-white p-4">
+              <p className="font-mono text-xs font-bold uppercase tracking-widest text-gray-500">Reminder</p>
+              <p className="font-sans text-sm text-vt-ink mt-2">Review names, quantities, and programs before saving.</p>
+            </div>
+          </div>
+
           <div className="space-y-6 mb-10">
             {parsedItems.map((item, idx) => (
               <div key={idx} className="flex flex-col sm:flex-row sm:items-center justify-between p-6 bg-vt-cream border-4 border-vt-ink shadow-[4px_4px_0px_0px_#1A1516]">
@@ -787,6 +832,44 @@ export default function SmartIntake() {
                         className="w-full border-2 border-vt-ink bg-white px-3 py-3 font-mono text-lg text-vt-ink focus:outline-none"
                       />
                     </div>
+                    <div>
+                      <label className="block font-mono text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Item Weight</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={item.weight_value ?? ''}
+                        onChange={(e) => updateParsedItem(idx, 'weight_value', e.target.value)}
+                        className="w-full border-2 border-vt-ink bg-white px-3 py-3 font-mono text-lg text-vt-ink focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-mono text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Weight Unit</label>
+                      <input
+                        value={item.weight_unit || ''}
+                        onChange={(e) => updateParsedItem(idx, 'weight_unit', e.target.value)}
+                        className="w-full border-2 border-vt-ink bg-white px-3 py-3 font-sans text-lg text-vt-ink focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-mono text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Price</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={item.unit_price ?? ''}
+                        onChange={(e) => updateParsedItem(idx, 'unit_price', e.target.value)}
+                        className="w-full border-2 border-vt-ink bg-white px-3 py-3 font-mono text-lg text-vt-ink focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-mono text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Price Type</label>
+                      <input
+                        value={item.price_basis || 'per_unit'}
+                        onChange={(e) => updateParsedItem(idx, 'price_basis', e.target.value)}
+                        className="w-full border-2 border-vt-ink bg-white px-3 py-3 font-sans text-lg text-vt-ink focus:outline-none"
+                      />
+                    </div>
                     <div className="md:col-span-2">
                       <label className="block font-mono text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Program</label>
                       <div className="flex gap-3">
@@ -818,6 +901,16 @@ export default function SmartIntake() {
                         {('vendor' in item && item.vendor) || (mode === 'text' && textVendor.trim()) ? (
                           <span className="font-mono text-xs font-bold uppercase tracking-widest border-2 border-vt-ink px-3 py-1">
                             Vendor: {String('vendor' in item && item.vendor ? item.vendor : textVendor.trim())}
+                          </span>
+                        ) : null}
+                        {item.weight_value ? (
+                          <span className="font-mono text-xs font-bold uppercase tracking-widest border-2 border-vt-ink px-3 py-1">
+                            {item.weight_value} {item.weight_unit || 'lbs'} each
+                          </span>
+                        ) : null}
+                        {item.unit_price ? (
+                          <span className="font-mono text-xs font-bold uppercase tracking-widest border-2 border-vt-ink px-3 py-1">
+                            ${item.unit_price.toFixed(2)} {item.price_basis === 'per_weight' ? `/ ${item.weight_unit || 'lb'}` : `/ ${item.unit}`}
                           </span>
                         ) : null}
                         {'source_line' in item && item.source_line ? (
@@ -903,6 +996,16 @@ export default function SmartIntake() {
                         <span className="font-mono text-xs font-bold uppercase tracking-widest border-2 border-vt-ink px-3 py-1 bg-white">
                           {item.category}
                         </span>
+                        {item.weight_value ? (
+                          <span className="font-mono text-xs font-bold uppercase tracking-widest border-2 border-vt-ink px-3 py-1 bg-white">
+                            {item.weight_value} {item.weight_unit || 'lbs'}
+                          </span>
+                        ) : null}
+                        {item.unit_price ? (
+                          <span className="font-mono text-xs font-bold uppercase tracking-widest border-2 border-vt-ink px-3 py-1 bg-white">
+                            ${item.unit_price.toFixed(2)} {item.price_basis === 'per_weight' ? `/ ${item.weight_unit || 'lb'}` : `/ ${item.unit}`}
+                          </span>
+                        ) : null}
                       </div>
                     </div>
                     <div className="space-y-2">

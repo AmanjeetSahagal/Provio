@@ -20,6 +20,11 @@ const categoryOptions = [
 ];
 
 const unitOptions = ['items', 'boxes', 'bags', 'cans', 'bottles', 'packs', 'lbs'];
+const weightUnitOptions = ['lbs', 'oz', 'kg', 'g'];
+const priceBasisOptions = [
+ 'per_unit',
+ 'per_weight',
+] as const;
 
 const thresholdOptions = [5, 10, 15, 20];
 
@@ -28,6 +33,10 @@ const emptyItem: InventoryInput = {
  category: 'Grains',
  unit: 'items',
  vendor: '',
+ weight_value: undefined,
+ weight_unit: 'lbs',
+ unit_price: undefined,
+ price_basis: 'per_unit',
  low_stock_threshold: 10,
  pantry_quantity: 0,
  grocery_quantity: 0,
@@ -70,6 +79,10 @@ export default function Inventory() {
  category: selectedItem.category,
  unit: selectedItem.unit,
  vendor: selectedItem.vendor || '',
+ weight_value: selectedItem.weight_value,
+ weight_unit: selectedItem.weight_unit || 'lbs',
+ unit_price: selectedItem.unit_price,
+ price_basis: selectedItem.price_basis || 'per_unit',
  low_stock_threshold: Number(selectedItem.low_stock_threshold ?? 10),
  pantry_quantity: Number(selectedItem.pantry_quantity || 0),
  grocery_quantity: Number(selectedItem.grocery_quantity || 0),
@@ -82,11 +95,13 @@ export default function Inventory() {
  e.preventDefault();
  try {
  const docRef = await addDoc(collection(db, 'items'), {
- ...newItem,
- low_stock_threshold: Number(newItem.low_stock_threshold ?? 10),
- pantry_quantity: Number(newItem.pantry_quantity),
- grocery_quantity: Number(newItem.grocery_quantity),
- created_at: new Date().toISOString(),
+     ...newItem,
+     low_stock_threshold: Number(newItem.low_stock_threshold ?? 10),
+     weight_value: newItem.weight_value ? Number(newItem.weight_value) : undefined,
+     unit_price: newItem.unit_price ? Number(newItem.unit_price) : undefined,
+     pantry_quantity: Number(newItem.pantry_quantity),
+     grocery_quantity: Number(newItem.grocery_quantity),
+     created_at: new Date().toISOString(),
  updated_at: new Date().toISOString(),
  });
 
@@ -139,10 +154,14 @@ export default function Inventory() {
  name: editItem.name,
  category: editItem.category,
  unit: editItem.unit,
- vendor: editItem.vendor?.trim() || '',
- low_stock_threshold: Number(editItem.low_stock_threshold ?? 10),
- pantry_quantity: nextPantryQty,
- grocery_quantity: nextGroceryQty,
+     vendor: editItem.vendor?.trim() || '',
+     weight_value: editItem.weight_value ? Number(editItem.weight_value) : undefined,
+     weight_unit: editItem.weight_value ? editItem.weight_unit || 'lbs' : '',
+     unit_price: editItem.unit_price ? Number(editItem.unit_price) : undefined,
+     price_basis: editItem.unit_price ? editItem.price_basis || 'per_unit' : '',
+     low_stock_threshold: Number(editItem.low_stock_threshold ?? 10),
+     pantry_quantity: nextPantryQty,
+     grocery_quantity: nextGroceryQty,
  updated_at: new Date().toISOString(),
  });
 
@@ -238,6 +257,13 @@ export default function Inventory() {
  />
  </div>
 
+ <div className="border-4 border-vt-ink bg-vt-cream p-6 shadow-[8px_8px_0px_0px_#861F41]">
+ <p className="font-mono text-xs font-bold uppercase tracking-[0.25em] text-gray-500">Quick Guide</p>
+ <p className="font-sans text-lg text-vt-ink mt-3">
+ Use <span className="font-bold">New Record</span> for brand-new items. Use the table to look up an existing item and restock it without re-entering everything.
+ </p>
+ </div>
+
  <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.3fr)_minmax(360px,0.8fr)] gap-10 items-start">
  <div className="bg-vt-cream border-4 border-vt-ink shadow-[12px_12px_0px_0px_#1A1516] overflow-hidden">
  <div className="overflow-x-auto">
@@ -246,6 +272,7 @@ export default function Inventory() {
  <tr>
  <th className="p-6 font-mono font-bold uppercase tracking-widest text-sm border-r-4 border-vt-ink ">Designation</th>
  <th className="p-6 font-mono font-bold uppercase tracking-widest text-sm border-r-4 border-vt-ink ">Class</th>
+ <th className="p-6 font-mono font-bold uppercase tracking-widest text-sm border-r-4 border-vt-ink ">Pricing</th>
  <th className="p-6 font-mono font-bold uppercase tracking-widest text-sm border-r-4 border-vt-ink ">Pantry</th>
  <th className="p-6 font-mono font-bold uppercase tracking-widest text-sm border-r-4 border-vt-ink ">Grocery</th>
  <th className="p-6 font-mono font-bold uppercase tracking-widest text-sm">Total</th>
@@ -269,10 +296,27 @@ export default function Inventory() {
  <p className="font-sans font-bold text-vt-ink text-xl">{item.name}</p>
  <p className="font-mono text-sm text-gray-600 mt-1 uppercase">{item.unit}</p>
  {item.vendor ? <p className="font-sans text-sm text-gray-600 mt-1">Vendor: {item.vendor}</p> : null}
+ {item.weight_value || item.unit_price ? (
+ <p className="font-sans text-sm text-gray-600 mt-1">
+ {item.weight_value ? `${item.weight_value} ${item.weight_unit || 'lbs'}` : 'No weight'}{item.unit_price ? ` // $${item.unit_price.toFixed(2)} ${item.price_basis === 'per_weight' ? `/ ${item.weight_unit || 'lb'}` : `/ ${item.unit}`}` : ''}
+ </p>
+ ) : null}
  </div>
  </div>
  </td>
  <td className="p-6 border-r-4 border-vt-ink font-sans text-lg font-semibold text-gray-700 uppercase">{item.category}</td>
+ <td className="p-6 border-r-4 border-vt-ink">
+ <div className="font-sans text-sm text-vt-ink">
+ {item.unit_price ? (
+ <p className="font-bold">${item.unit_price.toFixed(2)} {item.price_basis === 'per_weight' ? `/${item.weight_unit || 'lb'}` : `/ ${item.unit}`}</p>
+ ) : (
+ <p className="text-gray-500">No pricing</p>
+ )}
+ {item.weight_value ? (
+ <p className="text-gray-600 mt-1">{item.weight_value} {item.weight_unit || 'lbs'} each</p>
+ ) : null}
+ </div>
+ </td>
  <td className="p-6 border-r-4 border-vt-ink font-mono font-bold text-vt-ink text-2xl">{item.pantry_quantity || 0}</td>
  <td className="p-6 border-r-4 border-vt-ink font-mono font-bold text-vt-ink text-2xl">{item.grocery_quantity || 0}</td>
  <td className="p-6 font-mono font-extrabold text-vt-maroon text-3xl">{(item.pantry_quantity || 0) + (item.grocery_quantity || 0)}</td>
@@ -280,7 +324,7 @@ export default function Inventory() {
  ))}
  {filteredItems.length === 0 && (
  <tr>
- <td colSpan={5} className="p-16 text-center font-mono text-gray-500 text-xl uppercase tracking-widest">No records found.</td>
+ <td colSpan={6} className="p-16 text-center font-mono text-gray-500 text-xl uppercase tracking-widest">No records found.</td>
  </tr>
  )}
  </tbody>
@@ -308,6 +352,12 @@ export default function Inventory() {
  <p className="font-mono text-sm text-gray-500 uppercase tracking-widest mt-2">Update details and stock levels</p>
  </div>
 
+ <div className="border-4 border-vt-ink bg-vt-orange/10 p-4">
+ <p className="font-sans text-sm text-vt-ink">
+ Change item details here, then use <span className="font-bold">Pantry Delta</span> or <span className="font-bold">Grocery Delta</span> only when stock actually changed.
+ </p>
+ </div>
+
  <div>
  <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Item Name</label>
  <input required type="text" value={editItem.name} onChange={e => setEditItem({ ...editItem, name: e.target.value })} className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-sans text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all" />
@@ -330,6 +380,32 @@ export default function Inventory() {
  <div>
  <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Vendor</label>
  <input list="inventory-vendors" type="text" value={editItem.vendor || ''} onChange={e => setEditItem({ ...editItem, vendor: e.target.value })} placeholder="Costco, Kroger, Food Bank..." className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-sans text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all" />
+ </div>
+
+ <div className="grid grid-cols-2 gap-5">
+ <div>
+ <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Item Weight</label>
+ <input type="number" min="0" step="0.01" value={editItem.weight_value ?? ''} onChange={e => setEditItem({ ...editItem, weight_value: e.target.value ? Number(e.target.value) : undefined })} placeholder="Optional" className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-mono text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all" />
+ </div>
+ <div>
+ <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Weight Unit</label>
+ <select value={editItem.weight_unit || 'lbs'} onChange={e => setEditItem({ ...editItem, weight_unit: e.target.value as InventoryInput['weight_unit'] })} className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-sans text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all">
+ {weightUnitOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+ </select>
+ </div>
+ </div>
+
+ <div className="grid grid-cols-2 gap-5">
+ <div>
+ <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Price</label>
+ <input type="number" min="0" step="0.01" value={editItem.unit_price ?? ''} onChange={e => setEditItem({ ...editItem, unit_price: e.target.value ? Number(e.target.value) : undefined })} placeholder="Optional" className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-mono text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all" />
+ </div>
+ <div>
+ <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Price Type</label>
+ <select value={editItem.price_basis || 'per_unit'} onChange={e => setEditItem({ ...editItem, price_basis: e.target.value as InventoryInput['price_basis'] })} className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-sans text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all">
+ {priceBasisOptions.map((option) => <option key={option} value={option}>{option === 'per_weight' ? 'Per Weight' : 'Per Unit'}</option>)}
+ </select>
+ </div>
  </div>
 
  <div>
@@ -431,6 +507,11 @@ export default function Inventory() {
  </div>
 
  <form onSubmit={handleAddItem} className="p-8 md:p-10 grid grid-cols-1 md:grid-cols-2 gap-8">
+ <div className="md:col-span-2 border-4 border-vt-ink bg-vt-orange/10 p-5">
+ <p className="font-sans text-base text-vt-ink">
+ Fill in the item details once, choose where the starting stock belongs, then save the record. Use the restock panel later if more of the same item arrives.
+ </p>
+ </div>
  <div>
  <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Item Name</label>
  <input required type="text" value={newItem.name} onChange={e => setNewItem({...newItem, name: e.target.value})} className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-sans text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all" />
@@ -450,6 +531,26 @@ export default function Inventory() {
  <div>
  <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Vendor</label>
  <input list="inventory-vendors" type="text" value={newItem.vendor || ''} onChange={e => setNewItem({...newItem, vendor: e.target.value})} placeholder="Costco, Kroger, Food Bank..." className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-sans text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all" />
+ </div>
+ <div>
+ <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Item Weight</label>
+ <input type="number" min="0" step="0.01" value={newItem.weight_value ?? ''} onChange={e => setNewItem({...newItem, weight_value: e.target.value ? Number(e.target.value) : undefined})} placeholder="Optional" className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-mono text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all" />
+ </div>
+ <div>
+ <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Weight Unit</label>
+ <select value={newItem.weight_unit || 'lbs'} onChange={e => setNewItem({...newItem, weight_unit: e.target.value as InventoryInput['weight_unit']})} className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-sans text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all">
+ {weightUnitOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+ </select>
+ </div>
+ <div>
+ <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Price</label>
+ <input type="number" min="0" step="0.01" value={newItem.unit_price ?? ''} onChange={e => setNewItem({...newItem, unit_price: e.target.value ? Number(e.target.value) : undefined})} placeholder="Optional" className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-mono text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all" />
+ </div>
+ <div>
+ <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Price Type</label>
+ <select value={newItem.price_basis || 'per_unit'} onChange={e => setNewItem({...newItem, price_basis: e.target.value as InventoryInput['price_basis']})} className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-sans text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all">
+ {priceBasisOptions.map((option) => <option key={option} value={option}>{option === 'per_weight' ? 'Per Weight' : 'Per Unit'}</option>)}
+ </select>
  </div>
  <div>
  <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Alert When Total Stock Falls Below</label>

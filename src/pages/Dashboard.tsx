@@ -51,7 +51,7 @@ export default function Dashboard() {
  <h1 className="font-serif text-5xl font-bold text-vt-ink uppercase tracking-tight">Dashboard</h1>
  <p className="font-mono text-gray-600 mt-3 text-lg uppercase tracking-widest">Today&apos;s overview</p>
  </div>
- 
+
  <div className="bg-vt-cream border-4 border-vt-ink shadow-[12px_12px_0px_0px_#1A1516] ">
  <div className="p-6 border-b-4 border-vt-ink bg-vt-maroon flex flex-col md:flex-row md:items-center md:justify-between gap-4">
  <h2 className="font-serif text-2xl font-bold text-vt-cream uppercase tracking-wide">Recent Activity Log</h2>
@@ -103,6 +103,7 @@ export default function Dashboard() {
  <div className="bg-vt-cream border-4 border-vt-ink shadow-[8px_8px_0px_0px_#861F41] h-full p-6 space-y-5">
  <div className="border-b-2 border-vt-ink pb-4">
  <h2 className="font-serif text-2xl font-bold text-vt-ink uppercase tracking-wide">Stock By Category</h2>
+ <p className="font-sans text-sm text-gray-600 mt-2">Use this to explain where most pantry volume is currently sitting.</p>
  </div>
  <div className="space-y-4">
  {categoryTotals.length === 0 ? (
@@ -122,6 +123,7 @@ export default function Dashboard() {
  <div className="bg-vt-cream border-4 border-vt-ink shadow-[8px_8px_0px_0px_#E87722] h-full p-6 space-y-5">
  <div className="border-b-2 border-vt-ink pb-4">
  <h2 className="font-serif text-2xl font-bold text-vt-ink uppercase tracking-wide">Restock Notices</h2>
+ <p className="font-sans text-sm text-gray-600 mt-2">These notices clear automatically after stock is replenished.</p>
  </div>
  <div className="space-y-4">
  {alerts.length === 0 ? (

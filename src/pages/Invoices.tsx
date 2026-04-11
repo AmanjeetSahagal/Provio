@@ -146,6 +146,16 @@ export default function Invoices() {
                             <span className="border-2 border-vt-ink px-3 py-1 bg-white font-mono text-xs font-bold uppercase tracking-widest text-vt-ink">
                               {item.category}
                             </span>
+                            {item.weight_value ? (
+                              <span className="border-2 border-vt-ink px-3 py-1 bg-white font-mono text-xs font-bold uppercase tracking-widest text-vt-ink">
+                                {item.weight_value} {item.weight_unit || 'lbs'}
+                              </span>
+                            ) : null}
+                            {item.unit_price ? (
+                              <span className="border-2 border-vt-ink px-3 py-1 bg-white font-mono text-xs font-bold uppercase tracking-widest text-vt-ink">
+                                ${item.unit_price.toFixed(2)} {item.price_basis === 'per_weight' ? `/ ${item.weight_unit || 'lb'}` : `/ ${item.unit}`}
+                              </span>
+                            ) : null}
                             {item.source_line ? (
                               <span className="border-2 border-vt-ink px-3 py-1 bg-white font-mono text-xs font-bold uppercase tracking-widest text-vt-ink">
                                 Source captured

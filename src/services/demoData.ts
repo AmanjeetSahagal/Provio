@@ -4,12 +4,12 @@ import { syncLowStockAlert } from './alerts';
 import { InventoryItem } from '../types';
 
 const SAMPLE_ITEMS = [
-  { name: 'White Rice', category: 'Grains', unit: 'bags', vendor: 'Costco', pantry_quantity: 24, grocery_quantity: 12, low_stock_threshold: 10 },
-  { name: 'Black Beans', category: 'Canned Goods', unit: 'cans', vendor: 'Kroger', pantry_quantity: 48, grocery_quantity: 18, low_stock_threshold: 15 },
-  { name: 'Granola Bars', category: 'Snacks', unit: 'boxes', vendor: 'Sam Club', pantry_quantity: 16, grocery_quantity: 10, low_stock_threshold: 8 },
-  { name: 'Pasta', category: 'Grains', unit: 'boxes', vendor: 'Costco', pantry_quantity: 20, grocery_quantity: 8, low_stock_threshold: 10 },
-  { name: 'Peanut Butter', category: 'Protein', unit: 'jars', vendor: 'Food Bank', pantry_quantity: 14, grocery_quantity: 6, low_stock_threshold: 6 },
-  { name: 'Apple Juice', category: 'Beverages', unit: 'bottles', vendor: 'Community Partner', pantry_quantity: 12, grocery_quantity: 12, low_stock_threshold: 6 },
+  { name: 'White Rice', category: 'Grains', unit: 'bags', vendor: 'Costco', weight_value: 5, weight_unit: 'lbs', unit_price: 6.99, price_basis: 'per_unit', pantry_quantity: 24, grocery_quantity: 12, low_stock_threshold: 10 },
+  { name: 'Black Beans', category: 'Canned Goods', unit: 'cans', vendor: 'Kroger', weight_value: 15, weight_unit: 'oz', unit_price: 1.29, price_basis: 'per_unit', pantry_quantity: 48, grocery_quantity: 18, low_stock_threshold: 15 },
+  { name: 'Granola Bars', category: 'Snacks', unit: 'boxes', vendor: 'Sam Club', weight_value: 12, weight_unit: 'oz', unit_price: 4.49, price_basis: 'per_unit', pantry_quantity: 16, grocery_quantity: 10, low_stock_threshold: 8 },
+  { name: 'Pasta', category: 'Grains', unit: 'boxes', vendor: 'Costco', weight_value: 16, weight_unit: 'oz', unit_price: 1.79, price_basis: 'per_unit', pantry_quantity: 20, grocery_quantity: 8, low_stock_threshold: 10 },
+  { name: 'Peanut Butter', category: 'Protein', unit: 'jars', vendor: 'Food Bank', weight_value: 28, weight_unit: 'oz', unit_price: 3.99, price_basis: 'per_unit', pantry_quantity: 14, grocery_quantity: 6, low_stock_threshold: 6 },
+  { name: 'Apple Juice', category: 'Beverages', unit: 'bottles', vendor: 'Community Partner', weight_value: 64, weight_unit: 'oz', unit_price: 2.49, price_basis: 'per_unit', pantry_quantity: 12, grocery_quantity: 12, low_stock_threshold: 6 },
 ];
 
 export async function seedSampleInventory() {

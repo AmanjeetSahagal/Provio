@@ -54,6 +54,10 @@ function normalizeInventoryItems(parsed: unknown[]): ParsedInventoryItem[] {
     unit: String((item as ParsedInventoryItem).unit || 'items'),
     quantity: Number((item as ParsedInventoryItem).quantity || 0),
     program: (item as ParsedInventoryItem).program === 'grocery' ? 'grocery' : 'pantry',
+    weight_value: (item as ParsedInventoryItem).weight_value ? Number((item as ParsedInventoryItem).weight_value) : undefined,
+    weight_unit: (item as ParsedInventoryItem).weight_unit || undefined,
+    unit_price: (item as ParsedInventoryItem).unit_price ? Number((item as ParsedInventoryItem).unit_price) : undefined,
+    price_basis: (item as ParsedInventoryItem).price_basis === 'per_weight' ? 'per_weight' : 'per_unit',
   }));
 }
 
@@ -71,6 +75,8 @@ function parseLineItems(rawText: string, defaultProgram: 'pantry' | 'grocery'): 
     .map((line) => {
       const quantityMatch = line.match(/(\d+(?:\.\d+)?)/);
       const quantity = quantityMatch ? Number(quantityMatch[1]) : 1;
+      const priceMatch = line.match(/\$(\d+(?:\.\d+)?)/);
+      const weightMatch = line.match(/(\d+(?:\.\d+)?)\s*(lb|lbs|oz|kg|g)\b/i);
       const unitMatch = UNIT_KEYWORDS.find((unit) => new RegExp(`\\b${unit}\\b`, 'i').test(line));
       const unit = unitMatch || 'items';
       const program =
@@ -92,6 +98,10 @@ function parseLineItems(rawText: string, defaultProgram: 'pantry' | 'grocery'): 
         unit,
         category: inferCategory(name),
         program,
+        weight_value: weightMatch ? Number(weightMatch[1]) : undefined,
+        weight_unit: weightMatch ? (weightMatch[2].toLowerCase() as ParsedInventoryItem['weight_unit']) : undefined,
+        unit_price: priceMatch ? Number(priceMatch[1]) : undefined,
+        price_basis: (weightMatch && /\bper\s*(lb|lbs|oz|kg|g)\b/i.test(line) ? 'per_weight' : 'per_unit') as ParsedInventoryItem['price_basis'],
       };
     })
     .filter((item) => item.name && item.quantity > 0);
@@ -145,6 +155,10 @@ export const parseInventoryText = async (text: string): Promise<ParsedInventoryI
     - unit (string, e.g., "cans", "boxes", "lbs")
     - quantity (number)
     - program (string, either "pantry" or "grocery", default to "pantry" if unspecified)
+    - weight_value (number, optional)
+    - weight_unit (string, optional: lb, lbs, oz, kg, g)
+    - unit_price (number, optional)
+    - price_basis (string, optional: per_unit or per_weight)
 
     Text: "${text}"
   `;
@@ -197,6 +211,10 @@ export const parseInvoiceInput = async ({
     - unit (string)
     - quantity (number)
     - program (string: pantry or grocery)
+    - weight_value (number, optional)
+    - weight_unit (string, optional: lb, lbs, oz, kg, g)
+    - unit_price (number, optional)
+    - price_basis (string, optional: per_unit or per_weight)
     - source_line (string, optional)
 
     Rules:
@@ -238,6 +256,10 @@ export const parseInvoiceInput = async ({
       quantity: Number(item.quantity || 0),
       program: item.program === 'grocery' ? 'grocery' : 'pantry',
       vendor: vendor || undefined,
+      weight_value: item.weight_value ? Number(item.weight_value) : undefined,
+      weight_unit: item.weight_unit ? String(item.weight_unit) as InvoiceLineItem['weight_unit'] : undefined,
+      unit_price: item.unit_price ? Number(item.unit_price) : undefined,
+      price_basis: item.price_basis === 'per_weight' ? 'per_weight' : 'per_unit',
       source_line: item.source_line ? String(item.source_line) : undefined,
     }));
   } catch (error) {

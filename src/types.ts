@@ -4,6 +4,10 @@ export type InventoryItem = {
   category: string;
   unit: string;
   vendor?: string;
+  weight_value?: number;
+  weight_unit?: 'lb' | 'lbs' | 'oz' | 'kg' | 'g';
+  unit_price?: number;
+  price_basis?: 'per_unit' | 'per_weight';
   low_stock_threshold?: number;
   pantry_quantity: number;
   grocery_quantity: number;
@@ -19,6 +23,10 @@ export type ParsedInventoryItem = {
   unit: string;
   quantity: number;
   program: 'pantry' | 'grocery';
+  weight_value?: number;
+  weight_unit?: 'lb' | 'lbs' | 'oz' | 'kg' | 'g';
+  unit_price?: number;
+  price_basis?: 'per_unit' | 'per_weight';
 };
 
 export type TransactionRecord = {
@@ -41,6 +49,10 @@ export type InvoiceLineItem = {
   category: string;
   program: 'pantry' | 'grocery';
   vendor?: string;
+  weight_value?: number;
+  weight_unit?: 'lb' | 'lbs' | 'oz' | 'kg' | 'g';
+  unit_price?: number;
+  price_basis?: 'per_unit' | 'per_weight';
   source_line?: string;
   linked_item_id?: string;
   transaction_id?: string;

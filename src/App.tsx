@@ -227,7 +227,6 @@ function Login() {
 
       <footer className="bg-vt-cream text-vt-ink py-12 border-t-8 border-vt-ink text-center">
         <div className="max-w-5xl mx-auto px-4 flex flex-col items-center">
-          <img src={provioLogo} alt="Provio logo" className="mb-6 h-12 w-12 rounded-full border-2 border-vt-ink object-cover" />
           <p className="font-mono font-bold uppercase tracking-widest text-lg mb-2">PROVIO Terminal</p>
           <p className="font-sans font-medium text-gray-600">Virginia Tech Food Pantry Operations</p>
           <div className="mt-8 pt-8 border-t-4 border-vt-ink/20 w-full max-w-md">
