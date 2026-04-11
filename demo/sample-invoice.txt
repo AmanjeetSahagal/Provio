@@ -1,0 +1,27 @@
+BLUE RIDGE FOOD SUPPLY CO.
+1420 Market Warehouse Rd.
+Roanoke, VA 24011
+accounts@blueridgefoodsupply.com
+
+INVOICE #: BR-20418
+DATE: April 11, 2026
+CUSTOMER: VT Food Pantry
+TERMS: Net 30
+
+---------------------------------------------------------------------------
+DESCRIPTION          CATEGORY         QTY    UNIT      WEIGHT     PRICE   TOTAL
+---------------------------------------------------------------------------
+White Rice           Grains            18    bags      5 lbs      6.99   125.82
+Black Beans          Canned Goods      36    cans      15 oz      1.29    46.44
+Peanut Butter        Protein           12    jars      28 oz      3.99    47.88
+Apple Juice          Beverages         20    bottles   64 oz      2.49    49.80
+---------------------------------------------------------------------------
+SUBTOTAL                                                             269.94
+TAX                                                                    0.00
+TOTAL DUE                                                            269.94
+---------------------------------------------------------------------------
+
+DELIVERY NOTES:
+Delivery for pantry intake processing.
+Recommended default allocation: Pantry program.
+Contact vendor support within 48 hours for shortage claims.

@@ -26,6 +26,11 @@ type UploadFile = {
   previewUrl: string;
 };
 
+const categoryOptions = ['Grains', 'Canned Goods', 'Produce', 'Snacks', 'Protein', 'Dairy', 'Beverages', 'Frozen', 'Bakery', 'Other'];
+const unitOptions = ['items', 'boxes', 'bags', 'cans', 'bottles', 'packs', 'lbs'];
+const weightUnitOptions = ['lbs', 'oz', 'kg', 'g'];
+const priceBasisOptions = ['per_unit', 'per_weight'] as const;
+
 const today = new Date().toISOString().slice(0, 10);
 
 function fileToBase64(file: File): Promise<UploadFile> {
@@ -55,6 +60,8 @@ export default function SmartIntake() {
   const [isListening, setIsListening] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [parsedItems, setParsedItems] = useState<ParsedInventoryItem[]>([]);
+  const [editingParsedIndex, setEditingParsedIndex] = useState<number | null>(null);
+  const [isEditingReviewVendor, setIsEditingReviewVendor] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
 
@@ -86,6 +93,40 @@ export default function SmartIntake() {
   const resetFeedback = () => {
     setIsSaved(false);
     setStatusMessage('');
+  };
+
+  const resetInvoiceDraft = () => {
+    setInvoiceVendor('');
+    setInvoiceDate(today);
+    setInvoiceDefaultProgram('pantry');
+    setInvoiceText('');
+    setInvoiceFile(null);
+    setInvoiceStatus('idle');
+  };
+
+  const resetVoiceDraft = () => {
+    recognitionRef.current?.stop();
+    setIsListening(false);
+    setVoiceTranscript('');
+    setVoiceVendor('');
+  };
+
+  const resetTextDraft = () => {
+    setInput('');
+    setTextVendor('');
+  };
+
+  const dismissParsedReview = () => {
+    setParsedItems([]);
+    setEditingParsedIndex(null);
+    setIsEditingReviewVendor(false);
+    if (mode === 'invoice') {
+      resetInvoiceDraft();
+    } else if (mode === 'voice') {
+      resetVoiceDraft();
+    } else {
+      resetTextDraft();
+    }
   };
 
   useEffect(() => {
@@ -338,12 +379,7 @@ export default function SmartIntake() {
           transaction_count: savedItems.length,
         });
 
-        setInvoiceText('');
-        setInvoiceVendor('');
-        setInvoiceDate(today);
-        setInvoiceDefaultProgram('pantry');
-        setInvoiceFile(null);
-        setInvoiceStatus('idle');
+        resetInvoiceDraft();
         setSelectedInvoiceId(invoiceDocRef.id);
       } else {
         const sourceVendor = mode === 'voice' ? voiceVendor.trim() : textVendor.trim();
@@ -443,6 +479,8 @@ export default function SmartIntake() {
   const switchMode = (nextMode: IntakeMode) => {
     setMode(nextMode);
     setParsedItems([]);
+    setEditingParsedIndex(null);
+    setIsEditingReviewVendor(false);
     resetFeedback();
     if (nextMode === 'invoice') {
       setInvoiceStatus(invoiceFile ? 'loaded' : 'idle');
@@ -450,6 +488,18 @@ export default function SmartIntake() {
     if (nextMode !== 'voice') {
       recognitionRef.current?.stop();
       setIsListening(false);
+    }
+  };
+
+  const currentReviewVendor = mode === 'invoice' ? invoiceVendor : mode === 'voice' ? voiceVendor : textVendor;
+
+  const setCurrentReviewVendor = (value: string) => {
+    if (mode === 'invoice') {
+      setInvoiceVendor(value);
+    } else if (mode === 'voice') {
+      setVoiceVendor(value);
+    } else {
+      setTextVendor(value);
     }
   };
 
@@ -611,7 +661,7 @@ export default function SmartIntake() {
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(280px,0.75fr)] gap-8 items-start">
+          <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.15fr)_360px] gap-8 items-start">
             <div className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
@@ -657,7 +707,7 @@ export default function SmartIntake() {
               </div>
 
               {invoiceFile ? (
-                <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_240px] gap-6 items-start">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
                   <div className={`border-4 border-vt-ink p-4 ${invoiceStatus === 'parsed' ? 'bg-green-200' : invoiceStatus === 'parsing' ? 'bg-vt-orange/20' : 'bg-vt-cream'}`}>
                     <p className="font-mono text-xs font-bold uppercase tracking-widest text-gray-500 mb-3">Invoice Status</p>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 font-mono text-xs font-bold uppercase tracking-widest">
@@ -671,86 +721,95 @@ export default function SmartIntake() {
                     {invoiceFile.mimeType.startsWith('image/') ? (
                       <img src={invoiceFile.previewUrl} alt={invoiceFile.name} className="w-full h-40 object-cover border-4 border-vt-ink bg-vt-cream" />
                     ) : (
-                      <div className="border-4 border-vt-ink bg-vt-cream p-5 min-h-40 flex flex-col items-center justify-center text-center">
-                        <FileText size={40} className="text-vt-maroon mb-3" />
-                        <p className="font-mono text-xs font-bold uppercase tracking-widest text-vt-ink break-all">{invoiceFile.name}</p>
-                        <p className="font-mono text-xs uppercase tracking-widest text-gray-500 mt-2">PDF ready for Gemini parsing</p>
+                      <div className="flex min-h-[120px] flex-col items-center justify-center text-center px-6 py-6">
+                        <p className="max-w-[240px] font-mono text-sm font-bold uppercase tracking-widest text-vt-ink break-words text-center leading-6">
+                          {invoiceFile.name}
+                        </p>
+                        <p className="font-mono text-xs uppercase tracking-widest text-gray-500 mt-4">Ready to parse</p>
                       </div>
                     )}
                   </div>
                 </div>
               ) : null}
 
-              <div className="relative">
-                <div className="absolute top-0 left-0 bg-vt-ink text-vt-cream font-mono text-xs font-bold uppercase tracking-widest px-4 py-2 border-b-4 border-r-4 border-vt-ink z-10">
-                  INVOICE NOTES / OCR TEXT
+              <div className="border-4 border-vt-ink bg-vt-cream p-6 space-y-5">
+                <div>
+                  <p className="font-mono text-xs font-bold uppercase tracking-widest text-gray-500 mb-3">Invoice Notes / OCR Text</p>
+                  <textarea
+                    value={invoiceText}
+                    onChange={(e) => setInvoiceText(e.target.value)}
+                    placeholder="Paste OCR text, vendor notes, or extra instructions. Gemini will combine this with the uploaded invoice file."
+                    className="w-full h-64 p-6 bg-vt-cream border-4 border-vt-ink focus:ring-4 focus:ring-vt-orange outline-none resize-none font-sans text-xl text-vt-ink placeholder-gray-400 shadow-inner"
+                  />
                 </div>
-                <textarea
-                  value={invoiceText}
-                  onChange={(e) => setInvoiceText(e.target.value)}
-                  placeholder="Paste OCR text, vendor notes, or extra instructions. Gemini will combine this with the uploaded invoice file."
-                  className="w-full h-64 p-8 pt-16 bg-vt-cream border-4 border-vt-ink focus:ring-4 focus:ring-vt-orange outline-none resize-none font-sans text-xl text-vt-ink placeholder-gray-400 shadow-inner"
-                />
-                <button
-                  onClick={handleProcess}
-                  disabled={isProcessing || (!invoiceText.trim() && !invoiceFile)}
-                  className="absolute bottom-6 right-6 bg-vt-ink text-vt-cream border-4 border-vt-ink p-4 hover:bg-vt-orange disabled:opacity-50 transition-all shadow-[6px_6px_0px_0px_#861F41] hover:-translate-y-1"
-                >
-                  {isProcessing && !parsedItems.length ? <Loader2 className="animate-spin" size={32} /> : <Send size={32} />}
-                </button>
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                  <p className="font-sans text-sm text-gray-600 max-w-2xl">
+                    Add any OCR text or notes you want Gemini to consider, then parse the invoice into structured pantry items.
+                  </p>
+                  <button
+                    onClick={handleProcess}
+                    disabled={isProcessing || (!invoiceText.trim() && !invoiceFile)}
+                    className="w-full md:w-auto bg-vt-ink text-vt-cream border-4 border-vt-ink px-8 py-4 font-mono font-bold uppercase flex items-center justify-center gap-3 hover:bg-vt-orange hover:text-vt-ink disabled:opacity-50 transition-all shadow-[6px_6px_0px_0px_#861F41] hover:-translate-y-1"
+                  >
+                    {isProcessing && !parsedItems.length ? <Loader2 className="animate-spin" size={24} /> : <Send size={24} />}
+                    Parse Invoice
+                  </button>
+                </div>
               </div>
             </div>
 
-            <div className="border-4 border-vt-ink bg-vt-orange/10 p-6 space-y-4">
-              <div className="flex items-center gap-3">
-                <FileText className="text-vt-maroon" size={28} />
-                <h2 className="font-serif text-2xl font-bold text-vt-ink uppercase">Invoice Tips</h2>
-              </div>
-              <p className="font-sans text-gray-700">
-                Upload the invoice file first, then paste any OCR text or notes if needed. Gemini will extract structured inventory lines for review before anything is saved.
-              </p>
-              <ul className="font-mono text-sm text-vt-ink space-y-3 uppercase tracking-wide">
-                <li>Use clear photos or scans</li>
-                <li>Add vendor/date for audit history</li>
-                <li>Review parsed quantities before committing</li>
-              </ul>
-            </div>
-
-            <div className="border-4 border-vt-ink bg-vt-cream p-6 space-y-5 shadow-[8px_8px_0px_0px_#1A1516]">
-              <div className="border-b-4 border-vt-ink pb-4">
-                <h2 className="font-serif text-2xl font-bold text-vt-ink uppercase">Invoice Audit Trail</h2>
-                <p className="font-mono text-xs font-bold uppercase tracking-widest text-gray-500 mt-2">Recent invoice imports and linked records</p>
-              </div>
-              {recentInvoices.length === 0 ? (
-                <div className="border-4 border-dashed border-vt-ink bg-white p-6 text-center font-mono text-sm uppercase tracking-widest text-gray-500">
-                  No invoice imports yet.
+            <div className="space-y-6 xl:sticky xl:top-6">
+              <div className="border-4 border-vt-ink bg-vt-orange/10 p-6 space-y-4">
+                <div className="flex items-center gap-3">
+                  <FileText className="text-vt-maroon" size={28} />
+                  <h2 className="font-serif text-2xl font-bold text-vt-ink uppercase">Invoice Tips</h2>
                 </div>
-              ) : (
-                <div className="space-y-3">
-                  {recentInvoices.slice(0, 4).map((invoice) => (
-                    <button
-                      key={invoice.id}
-                      type="button"
-                      onClick={() => setSelectedInvoiceId(invoice.id)}
-                      className={`w-full text-left border-4 border-vt-ink px-4 py-4 transition-colors ${
-                        selectedInvoice?.id === invoice.id ? 'bg-vt-orange/20' : 'bg-white hover:bg-vt-orange/10'
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-4">
-                        <div>
-                          <p className="font-sans text-lg font-bold text-vt-ink">{invoice.vendor || 'Unknown vendor'}</p>
-                          <p className="font-mono text-xs font-bold uppercase tracking-widest text-gray-500 mt-2">
-                            {invoice.date} // {invoice.transaction_count || invoice.items?.length || 0} linked lines
-                          </p>
+                <p className="font-sans text-gray-700">
+                  Upload the invoice file first, then paste any OCR text or notes if needed. Gemini will extract structured inventory lines for review before anything is saved.
+                </p>
+                <ul className="font-mono text-sm text-vt-ink space-y-3 uppercase tracking-wide">
+                  <li>Use clear photos or scans</li>
+                  <li>Add vendor/date for audit history</li>
+                  <li>Review parsed quantities before committing</li>
+                </ul>
+              </div>
+
+              <div className="border-4 border-vt-ink bg-vt-cream p-6 space-y-5 shadow-[8px_8px_0px_0px_#1A1516]">
+                <div className="border-b-4 border-vt-ink pb-4">
+                  <h2 className="font-serif text-2xl font-bold text-vt-ink uppercase">Invoice Audit Trail</h2>
+                  <p className="font-mono text-xs font-bold uppercase tracking-widest text-gray-500 mt-2">Recent invoice imports and linked records</p>
+                </div>
+                {recentInvoices.length === 0 ? (
+                  <div className="border-4 border-dashed border-vt-ink bg-white p-6 text-center font-mono text-sm uppercase tracking-widest text-gray-500">
+                    No invoice imports yet.
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {recentInvoices.slice(0, 4).map((invoice) => (
+                      <button
+                        key={invoice.id}
+                        type="button"
+                        onClick={() => setSelectedInvoiceId(invoice.id)}
+                        className={`w-full text-left border-4 border-vt-ink px-4 py-4 transition-colors ${
+                          selectedInvoice?.id === invoice.id ? 'bg-vt-orange/20' : 'bg-white hover:bg-vt-orange/10'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-4">
+                          <div>
+                            <p className="font-sans text-lg font-bold text-vt-ink">{invoice.vendor || 'Unknown vendor'}</p>
+                            <p className="font-mono text-xs font-bold uppercase tracking-widest text-gray-500 mt-2">
+                              {invoice.date} // {invoice.transaction_count || invoice.items?.length || 0} linked lines
+                            </p>
+                          </div>
+                          <span className="font-mono text-xs font-bold uppercase tracking-widest border-2 border-vt-ink px-2 py-1 bg-vt-cream">
+                            {invoice.status || 'saved'}
+                          </span>
                         </div>
-                        <span className="font-mono text-xs font-bold uppercase tracking-widest border-2 border-vt-ink px-2 py-1 bg-vt-cream">
-                          {invoice.status || 'saved'}
-                        </span>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -763,186 +822,344 @@ export default function SmartIntake() {
       ) : null}
 
       {parsedItems.length > 0 && (
-        <div className="bg-vt-cream border-4 border-vt-ink p-8 shadow-[12px_12px_0px_0px_#E87722] mt-12">
-          <div className="border-b-4 border-vt-ink pb-4 mb-8">
-            <h2 className="font-serif text-3xl font-bold text-vt-ink uppercase">
-              {mode === 'invoice' ? 'Parsed Invoice Output' : 'Parsed Output'}
-            </h2>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-            <div className="border-4 border-vt-ink bg-white p-4">
-              <p className="font-mono text-xs font-bold uppercase tracking-widest text-gray-500">Detected Items</p>
-              <p className="font-serif text-4xl font-bold text-vt-ink mt-2">{parsedItems.length}</p>
-            </div>
-            <div className="border-4 border-vt-ink bg-white p-4">
-              <p className="font-mono text-xs font-bold uppercase tracking-widest text-gray-500">Source</p>
-              <p className="font-sans text-lg font-bold text-vt-ink mt-2">
-                {mode === 'invoice' ? 'Invoice Scan' : mode === 'voice' ? 'Voice Intake' : 'Text Intake'}
-              </p>
-            </div>
-            <div className="border-4 border-vt-ink bg-white p-4">
-              <p className="font-mono text-xs font-bold uppercase tracking-widest text-gray-500">Vendor</p>
-              <p className="font-sans text-lg font-bold text-vt-ink mt-2">
-                {mode === 'invoice' ? invoiceVendor || 'Not provided' : mode === 'voice' ? voiceVendor || 'Not provided' : textVendor || 'Not provided'}
-              </p>
-            </div>
-            <div className="border-4 border-vt-ink bg-white p-4">
-              <p className="font-mono text-xs font-bold uppercase tracking-widest text-gray-500">Reminder</p>
-              <p className="font-sans text-sm text-vt-ink mt-2">Review names, quantities, and programs before saving.</p>
-            </div>
-          </div>
-
-          <div className="space-y-6 mb-10">
-            {parsedItems.map((item, idx) => (
-              <div key={idx} className="flex flex-col sm:flex-row sm:items-center justify-between p-6 bg-vt-cream border-4 border-vt-ink shadow-[4px_4px_0px_0px_#1A1516]">
-                {mode === 'voice' ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
-                    <div>
-                      <label className="block font-mono text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Item Name</label>
-                      <input
-                        value={item.name}
-                        onChange={(e) => updateParsedItem(idx, 'name', e.target.value)}
-                        className="w-full border-2 border-vt-ink bg-white px-3 py-3 font-sans text-lg text-vt-ink focus:outline-none"
-                      />
-                    </div>
-                    <div>
-                      <label className="block font-mono text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Category</label>
-                      <input
-                        value={item.category}
-                        onChange={(e) => updateParsedItem(idx, 'category', e.target.value)}
-                        className="w-full border-2 border-vt-ink bg-white px-3 py-3 font-sans text-lg text-vt-ink focus:outline-none"
-                      />
-                    </div>
-                    <div>
-                      <label className="block font-mono text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Unit</label>
-                      <input
-                        value={item.unit}
-                        onChange={(e) => updateParsedItem(idx, 'unit', e.target.value)}
-                        className="w-full border-2 border-vt-ink bg-white px-3 py-3 font-sans text-lg text-vt-ink focus:outline-none"
-                      />
-                    </div>
-                    <div>
-                      <label className="block font-mono text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Quantity</label>
-                      <input
-                        type="number"
-                        min="0"
-                        value={item.quantity}
-                        onChange={(e) => updateParsedItem(idx, 'quantity', e.target.value)}
-                        className="w-full border-2 border-vt-ink bg-white px-3 py-3 font-mono text-lg text-vt-ink focus:outline-none"
-                      />
-                    </div>
-                    <div>
-                      <label className="block font-mono text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Item Weight</label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={item.weight_value ?? ''}
-                        onChange={(e) => updateParsedItem(idx, 'weight_value', e.target.value)}
-                        className="w-full border-2 border-vt-ink bg-white px-3 py-3 font-mono text-lg text-vt-ink focus:outline-none"
-                      />
-                    </div>
-                    <div>
-                      <label className="block font-mono text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Weight Unit</label>
-                      <input
-                        value={item.weight_unit || ''}
-                        onChange={(e) => updateParsedItem(idx, 'weight_unit', e.target.value)}
-                        className="w-full border-2 border-vt-ink bg-white px-3 py-3 font-sans text-lg text-vt-ink focus:outline-none"
-                      />
-                    </div>
-                    <div>
-                      <label className="block font-mono text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Price</label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={item.unit_price ?? ''}
-                        onChange={(e) => updateParsedItem(idx, 'unit_price', e.target.value)}
-                        className="w-full border-2 border-vt-ink bg-white px-3 py-3 font-mono text-lg text-vt-ink focus:outline-none"
-                      />
-                    </div>
-                    <div>
-                      <label className="block font-mono text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Price Type</label>
-                      <input
-                        value={item.price_basis || 'per_unit'}
-                        onChange={(e) => updateParsedItem(idx, 'price_basis', e.target.value)}
-                        className="w-full border-2 border-vt-ink bg-white px-3 py-3 font-sans text-lg text-vt-ink focus:outline-none"
-                      />
-                    </div>
-                    <div className="md:col-span-2">
-                      <label className="block font-mono text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Program</label>
-                      <div className="flex gap-3">
-                        <button
-                          type="button"
-                          onClick={() => updateParsedItem(idx, 'program', 'pantry')}
-                          className={`px-4 py-3 border-2 border-vt-ink font-mono font-bold uppercase ${item.program === 'pantry' ? 'bg-vt-maroon text-vt-cream' : 'bg-white text-vt-ink'}`}
-                        >
-                          Pantry
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => updateParsedItem(idx, 'program', 'grocery')}
-                          className={`px-4 py-3 border-2 border-vt-ink font-mono font-bold uppercase ${item.program === 'grocery' ? 'bg-vt-orange text-vt-ink' : 'bg-white text-vt-ink'}`}
-                        >
-                          Grocery
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <>
-                    <div>
-                      <p className="font-sans font-bold text-vt-ink text-2xl">{item.name}</p>
-                      <div className="flex items-center gap-3 mt-3 flex-wrap">
-                        <span className="font-mono text-sm font-bold uppercase tracking-widest text-gray-600">{item.category}</span>
-                        <span className="w-2 h-2 bg-vt-ink rounded-full"></span>
-                        <span className="font-mono text-sm font-bold uppercase tracking-widest bg-vt-orange text-vt-ink px-3 py-1 border-2 border-vt-ink">{item.program}</span>
-                        {('vendor' in item && item.vendor) || (mode === 'text' && textVendor.trim()) ? (
-                          <span className="font-mono text-xs font-bold uppercase tracking-widest border-2 border-vt-ink px-3 py-1">
-                            Vendor: {String('vendor' in item && item.vendor ? item.vendor : textVendor.trim())}
-                          </span>
-                        ) : null}
-                        {item.weight_value ? (
-                          <span className="font-mono text-xs font-bold uppercase tracking-widest border-2 border-vt-ink px-3 py-1">
-                            {item.weight_value} {item.weight_unit || 'lbs'} each
-                          </span>
-                        ) : null}
-                        {item.unit_price ? (
-                          <span className="font-mono text-xs font-bold uppercase tracking-widest border-2 border-vt-ink px-3 py-1">
-                            ${item.unit_price.toFixed(2)} {item.price_basis === 'per_weight' ? `/ ${item.weight_unit || 'lb'}` : `/ ${item.unit}`}
-                          </span>
-                        ) : null}
-                        {'source_line' in item && item.source_line ? (
-                          <span className="font-mono text-xs font-bold uppercase tracking-widest border-2 border-vt-ink px-3 py-1">
-                            Invoice line
-                          </span>
-                        ) : null}
-                      </div>
-                    </div>
-                    <div className="text-left sm:text-right mt-4 sm:mt-0">
-                      <p className="font-mono font-extrabold text-vt-maroon text-4xl">
-                        {item.quantity} <span className="text-xl text-vt-ink">{item.unit}</span>
-                      </p>
-                    </div>
-                  </>
-                )}
+        <div className="fixed inset-y-0 right-0 left-0 lg:left-72 z-50 flex items-center justify-center p-4 md:p-8">
+          <button
+            type="button"
+            aria-label="Close parsed review modal"
+            onClick={dismissParsedReview}
+            className="absolute inset-0 bg-vt-ink/55 backdrop-blur-[2px]"
+          />
+          <div className="relative w-full max-w-5xl max-h-[90vh] overflow-y-auto bg-vt-cream border-4 border-vt-ink shadow-[16px_16px_0px_0px_#1A1516]">
+            <div className="sticky top-0 bg-vt-maroon text-vt-cream border-b-4 border-vt-ink px-6 py-5 flex items-center justify-between gap-4">
+              <div>
+                <p className="font-mono text-xs font-bold uppercase tracking-[0.3em] opacity-80">Review Step</p>
+                <h2 className="font-serif text-3xl font-bold uppercase">
+                  {mode === 'invoice' ? 'Parsed Invoice Output' : 'Parsed Output'}
+                </h2>
               </div>
-            ))}
-          </div>
+              <button
+                type="button"
+                onClick={dismissParsedReview}
+                className="border-4 border-vt-cream px-4 py-2 font-mono font-bold uppercase hover:bg-vt-cream hover:text-vt-maroon transition-colors"
+              >
+                Close
+              </button>
+            </div>
 
-          <div className="flex flex-col sm:flex-row justify-end gap-6 border-t-4 border-vt-ink pt-8">
-            <button onClick={() => setParsedItems([])} className="px-8 py-4 font-mono font-bold uppercase text-vt-ink border-4 border-vt-ink hover:bg-vt-ink hover:text-vt-cream transition-colors">
-              Discard
-            </button>
-            <button
-              onClick={handleSave}
-              disabled={isProcessing}
-              className="bg-vt-maroon text-vt-cream border-4 border-vt-ink px-10 py-4 font-mono font-bold uppercase flex items-center justify-center gap-3 hover:bg-vt-maroon-dark hover:-translate-y-1 shadow-[6px_6px_0px_0px_#1A1516] transition-all"
-            >
-              {isProcessing ? <Loader2 className="animate-spin" size={24} /> : <CheckCircle2 size={24} />}
-              Commit to Database
-            </button>
+            <div className="p-8 md:p-10 space-y-8">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="border-4 border-vt-ink bg-white p-4">
+                  <p className="font-mono text-xs font-bold uppercase tracking-widest text-gray-500">Detected Items</p>
+                  <p className="font-serif text-4xl font-bold text-vt-ink mt-2">{parsedItems.length}</p>
+                </div>
+                <div className="border-4 border-vt-ink bg-white p-4">
+                  <p className="font-mono text-xs font-bold uppercase tracking-widest text-gray-500">Source</p>
+                  <p className="font-sans text-lg font-bold text-vt-ink mt-2">
+                    {mode === 'invoice' ? 'Invoice Scan' : mode === 'voice' ? 'Voice Intake' : 'Text Intake'}
+                  </p>
+                </div>
+                <div className="border-4 border-vt-ink bg-white p-4">
+                  <p className="font-mono text-xs font-bold uppercase tracking-widest text-gray-500">Vendor</p>
+                  {isEditingReviewVendor ? (
+                    <input
+                      value={currentReviewVendor}
+                      onChange={(e) => setCurrentReviewVendor(e.target.value)}
+                      onBlur={() => setIsEditingReviewVendor(false)}
+                      autoFocus
+                      className="w-full mt-2 border-2 border-vt-ink bg-white px-3 py-2 font-sans text-lg font-bold text-vt-ink focus:outline-none"
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingReviewVendor(true)}
+                      className="mt-2 text-left font-sans text-lg font-bold text-vt-ink hover:text-vt-maroon hover:bg-vt-orange/15 px-2 py-1 -mx-2 rounded-sm transition-colors"
+                    >
+                      {currentReviewVendor || 'Not provided'}
+                    </button>
+                  )}
+                </div>
+                <div className="border-4 border-vt-ink bg-white p-4">
+                  <p className="font-mono text-xs font-bold uppercase tracking-widest text-gray-500">Reminder</p>
+                  <p className="font-sans text-sm text-vt-ink mt-2">Review names, quantities, and programs before saving.</p>
+                </div>
+              </div>
+
+              <div className="space-y-6">
+                {parsedItems.map((item, idx) => (
+                  <div key={idx} className="p-6 bg-vt-cream border-4 border-vt-ink shadow-[4px_4px_0px_0px_#1A1516]">
+                    {mode === 'voice' ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                        <div>
+                          <label className="block font-mono text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Item Name</label>
+                          <input
+                            value={item.name}
+                            onChange={(e) => updateParsedItem(idx, 'name', e.target.value)}
+                            className="w-full border-2 border-vt-ink bg-white px-3 py-3 font-sans text-lg text-vt-ink focus:outline-none"
+                          />
+                        </div>
+                        <div>
+                          <label className="block font-mono text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Category</label>
+                          <select
+                            value={item.category}
+                            onChange={(e) => updateParsedItem(idx, 'category', e.target.value)}
+                            className="w-full border-2 border-vt-ink bg-white px-3 py-3 font-sans text-lg text-vt-ink focus:outline-none"
+                          >
+                            {categoryOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block font-mono text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Unit</label>
+                          <select
+                            value={item.unit}
+                            onChange={(e) => updateParsedItem(idx, 'unit', e.target.value)}
+                            className="w-full border-2 border-vt-ink bg-white px-3 py-3 font-sans text-lg text-vt-ink focus:outline-none"
+                          >
+                            {unitOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block font-mono text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Quantity</label>
+                          <input
+                            type="number"
+                            min="0"
+                            value={item.quantity}
+                            onChange={(e) => updateParsedItem(idx, 'quantity', e.target.value)}
+                            className="w-full border-2 border-vt-ink bg-white px-3 py-3 font-mono text-lg text-vt-ink focus:outline-none"
+                          />
+                        </div>
+                        <div>
+                          <label className="block font-mono text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Item Weight</label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={item.weight_value ?? ''}
+                            onChange={(e) => updateParsedItem(idx, 'weight_value', e.target.value)}
+                            className="w-full border-2 border-vt-ink bg-white px-3 py-3 font-mono text-lg text-vt-ink focus:outline-none"
+                          />
+                        </div>
+                        <div>
+                          <label className="block font-mono text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Weight Unit</label>
+                          <select
+                            value={item.weight_unit || 'lbs'}
+                            onChange={(e) => updateParsedItem(idx, 'weight_unit', e.target.value)}
+                            className="w-full border-2 border-vt-ink bg-white px-3 py-3 font-sans text-lg text-vt-ink focus:outline-none"
+                          >
+                            {weightUnitOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block font-mono text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Price</label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={item.unit_price ?? ''}
+                            onChange={(e) => updateParsedItem(idx, 'unit_price', e.target.value)}
+                            className="w-full border-2 border-vt-ink bg-white px-3 py-3 font-mono text-lg text-vt-ink focus:outline-none"
+                          />
+                        </div>
+                        <div>
+                          <label className="block font-mono text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Price Type</label>
+                          <select
+                            value={item.price_basis || 'per_unit'}
+                            onChange={(e) => updateParsedItem(idx, 'price_basis', e.target.value)}
+                            className="w-full border-2 border-vt-ink bg-white px-3 py-3 font-sans text-lg text-vt-ink focus:outline-none"
+                          >
+                            {priceBasisOptions.map((option) => <option key={option} value={option}>{option === 'per_weight' ? 'Per Weight' : 'Per Unit'}</option>)}
+                          </select>
+                        </div>
+                        <div className="md:col-span-2">
+                          <label className="block font-mono text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Program</label>
+                          <div className="flex gap-3">
+                            <button
+                              type="button"
+                              onClick={() => updateParsedItem(idx, 'program', 'pantry')}
+                              className={`px-4 py-3 border-2 border-vt-ink font-mono font-bold uppercase ${item.program === 'pantry' ? 'bg-vt-maroon text-vt-cream' : 'bg-white text-vt-ink'}`}
+                            >
+                              Pantry
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => updateParsedItem(idx, 'program', 'grocery')}
+                              className={`px-4 py-3 border-2 border-vt-ink font-mono font-bold uppercase ${item.program === 'grocery' ? 'bg-vt-orange text-vt-ink' : 'bg-white text-vt-ink'}`}
+                            >
+                              Grocery
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      editingParsedIndex === idx ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                          <div>
+                            <label className="block font-mono text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Item Name</label>
+                            <input
+                              value={item.name}
+                              onChange={(e) => updateParsedItem(idx, 'name', e.target.value)}
+                              className="w-full border-2 border-vt-ink bg-white px-3 py-3 font-sans text-lg text-vt-ink focus:outline-none"
+                            />
+                          </div>
+                          <div>
+                            <label className="block font-mono text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Category</label>
+                            <select
+                              value={item.category}
+                              onChange={(e) => updateParsedItem(idx, 'category', e.target.value)}
+                              className="w-full border-2 border-vt-ink bg-white px-3 py-3 font-sans text-lg text-vt-ink focus:outline-none"
+                            >
+                              {categoryOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block font-mono text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Unit</label>
+                            <select
+                              value={item.unit}
+                              onChange={(e) => updateParsedItem(idx, 'unit', e.target.value)}
+                              className="w-full border-2 border-vt-ink bg-white px-3 py-3 font-sans text-lg text-vt-ink focus:outline-none"
+                            >
+                              {unitOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block font-mono text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Quantity</label>
+                            <input
+                              type="number"
+                              min="0"
+                              value={item.quantity}
+                              onChange={(e) => updateParsedItem(idx, 'quantity', e.target.value)}
+                              className="w-full border-2 border-vt-ink bg-white px-3 py-3 font-mono text-lg text-vt-ink focus:outline-none"
+                            />
+                          </div>
+                          <div>
+                            <label className="block font-mono text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Item Weight</label>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={item.weight_value ?? ''}
+                              onChange={(e) => updateParsedItem(idx, 'weight_value', e.target.value)}
+                              className="w-full border-2 border-vt-ink bg-white px-3 py-3 font-mono text-lg text-vt-ink focus:outline-none"
+                            />
+                          </div>
+                          <div>
+                            <label className="block font-mono text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Weight Unit</label>
+                            <select
+                              value={item.weight_unit || 'lbs'}
+                              onChange={(e) => updateParsedItem(idx, 'weight_unit', e.target.value)}
+                              className="w-full border-2 border-vt-ink bg-white px-3 py-3 font-sans text-lg text-vt-ink focus:outline-none"
+                            >
+                              {weightUnitOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block font-mono text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Price</label>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={item.unit_price ?? ''}
+                              onChange={(e) => updateParsedItem(idx, 'unit_price', e.target.value)}
+                              className="w-full border-2 border-vt-ink bg-white px-3 py-3 font-mono text-lg text-vt-ink focus:outline-none"
+                            />
+                          </div>
+                          <div>
+                            <label className="block font-mono text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Price Type</label>
+                            <select
+                              value={item.price_basis || 'per_unit'}
+                              onChange={(e) => updateParsedItem(idx, 'price_basis', e.target.value)}
+                              className="w-full border-2 border-vt-ink bg-white px-3 py-3 font-sans text-lg text-vt-ink focus:outline-none"
+                            >
+                              {priceBasisOptions.map((option) => <option key={option} value={option}>{option === 'per_weight' ? 'Per Weight' : 'Per Unit'}</option>)}
+                            </select>
+                          </div>
+                          <div className="md:col-span-2">
+                            <label className="block font-mono text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Program</label>
+                            <div className="flex flex-wrap gap-3">
+                              <button
+                                type="button"
+                                onClick={() => updateParsedItem(idx, 'program', 'pantry')}
+                                className={`px-4 py-3 border-2 border-vt-ink font-mono font-bold uppercase ${item.program === 'pantry' ? 'bg-vt-maroon text-vt-cream' : 'bg-white text-vt-ink'}`}
+                              >
+                                Pantry
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => updateParsedItem(idx, 'program', 'grocery')}
+                                className={`px-4 py-3 border-2 border-vt-ink font-mono font-bold uppercase ${item.program === 'grocery' ? 'bg-vt-orange text-vt-ink' : 'bg-white text-vt-ink'}`}
+                              >
+                                Grocery
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setEditingParsedIndex(null)}
+                                className="px-4 py-3 border-2 border-vt-ink font-mono text-xs font-bold uppercase tracking-widest bg-white text-vt-ink"
+                              >
+                                Done Editing
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setEditingParsedIndex(idx)}
+                          className="w-full text-left flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-vt-orange/10 transition-colors p-2 -m-2"
+                        >
+                          <div>
+                            <p className="font-sans font-bold text-vt-ink text-2xl">{item.name}</p>
+                            <div className="flex items-center gap-3 mt-3 flex-wrap">
+                              <span className="font-mono text-sm font-bold uppercase tracking-widest text-gray-600">{item.category}</span>
+                              <span className="w-2 h-2 bg-vt-ink rounded-full"></span>
+                              <span className="font-mono text-sm font-bold uppercase tracking-widest bg-vt-orange text-vt-ink px-3 py-1 border-2 border-vt-ink">{item.program}</span>
+                              {currentReviewVendor ? (
+                                <span className="font-mono text-xs font-bold uppercase tracking-widest border-2 border-vt-ink px-3 py-1">
+                                  Vendor: {currentReviewVendor}
+                                </span>
+                              ) : null}
+                              {item.weight_value ? (
+                                <span className="font-mono text-xs font-bold uppercase tracking-widest border-2 border-vt-ink px-3 py-1">
+                                  {item.weight_value} {item.weight_unit || 'lbs'} each
+                                </span>
+                              ) : null}
+                              {item.unit_price ? (
+                                <span className="font-mono text-xs font-bold uppercase tracking-widest border-2 border-vt-ink px-3 py-1">
+                                  ${item.unit_price.toFixed(2)} {item.price_basis === 'per_weight' ? `/ ${item.weight_unit || 'lb'}` : `/ ${item.unit}`}
+                                </span>
+                              ) : null}
+                              {'source_line' in item && item.source_line ? (
+                                <span className="font-mono text-xs font-bold uppercase tracking-widest border-2 border-vt-ink px-3 py-1">
+                                  Invoice line
+                                </span>
+                              ) : null}
+                            </div>
+                            <p className="font-mono text-xs uppercase tracking-widest text-gray-500 mt-3">Click item to edit</p>
+                          </div>
+                          <div className="text-left sm:text-right mt-4 sm:mt-0">
+                            <p className="font-mono font-extrabold text-vt-maroon text-4xl">
+                              {item.quantity} <span className="text-xl text-vt-ink">{item.unit}</span>
+                            </p>
+                          </div>
+                        </button>
+                      )
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex flex-col sm:flex-row justify-end gap-6 border-t-4 border-vt-ink pt-8">
+                <button onClick={dismissParsedReview} className="px-8 py-4 font-mono font-bold uppercase text-vt-ink border-4 border-vt-ink hover:bg-vt-ink hover:text-vt-cream transition-colors">
+                  Discard
+                </button>
+                <button
+                  onClick={handleSave}
+                  disabled={isProcessing}
+                  className="bg-vt-maroon text-vt-cream border-4 border-vt-ink px-10 py-4 font-mono font-bold uppercase flex items-center justify-center gap-3 hover:bg-vt-maroon-dark hover:-translate-y-1 shadow-[6px_6px_0px_0px_#1A1516] transition-all"
+                >
+                  {isProcessing ? <Loader2 className="animate-spin" size={24} /> : <CheckCircle2 size={24} />}
+                  Commit to Database
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

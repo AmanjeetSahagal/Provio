@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Sample Pantry Invoice</title>
+    <style>
+      :root {
+        --ink: #1a1516;
+        --maroon: #861f41;
+        --orange: #e87722;
+        --paper: #fffdf7;
+        --gray: #6b7280;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        padding: 36px;
+        font-family: Helvetica, Arial, sans-serif;
+        color: var(--ink);
+        background: white;
+      }
+
+      .invoice {
+        border: 3px solid var(--ink);
+        padding: 28px;
+        background: var(--paper);
+      }
+
+      .header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        border-bottom: 3px solid var(--ink);
+        padding-bottom: 18px;
+        margin-bottom: 22px;
+      }
+
+      .title {
+        font-size: 34px;
+        font-weight: 800;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        margin: 0 0 6px;
+      }
+
+      .vendor {
+        font-size: 20px;
+        font-weight: 700;
+        color: var(--maroon);
+        margin: 0 0 4px;
+      }
+
+      .subtle {
+        color: var(--gray);
+        font-size: 13px;
+        line-height: 1.5;
+      }
+
+      .meta {
+        text-align: right;
+      }
+
+      .meta strong {
+        display: inline-block;
+        min-width: 88px;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 10px;
+      }
+
+      thead th {
+        background: var(--maroon);
+        color: white;
+        font-size: 12px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        padding: 12px 10px;
+        text-align: left;
+      }
+
+      tbody td {
+        border-bottom: 2px solid var(--ink);
+        padding: 12px 10px;
+        font-size: 14px;
+        vertical-align: top;
+      }
+
+      .num {
+        text-align: right;
+        white-space: nowrap;
+      }
+
+      .summary {
+        margin-top: 22px;
+        display: flex;
+        justify-content: flex-end;
+      }
+
+      .summary-card {
+        width: 280px;
+        border: 3px solid var(--ink);
+      }
+
+      .summary-row {
+        display: flex;
+        justify-content: space-between;
+        padding: 10px 14px;
+        border-bottom: 2px solid var(--ink);
+        font-size: 14px;
+      }
+
+      .summary-row:last-child {
+        border-bottom: 0;
+        background: var(--orange);
+        font-weight: 800;
+      }
+
+      .notes {
+        margin-top: 28px;
+        border-top: 3px solid var(--ink);
+        padding-top: 16px;
+      }
+
+      .badge {
+        display: inline-block;
+        border: 2px solid var(--ink);
+        background: var(--orange);
+        padding: 6px 10px;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        font-weight: 700;
+        margin-bottom: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="invoice">
+      <section class="header">
+        <div>
+          <p class="title">Invoice</p>
+          <p class="vendor">Blue Ridge Food Supply Co.</p>
+          <div class="subtle">
+            1420 Market Warehouse Rd.<br />
+            Roanoke, VA 24011<br />
+            accounts@blueridgefoodsupply.com
+          </div>
+        </div>
+        <div class="meta subtle">
+          <div><strong>Invoice #</strong> BR-20418</div>
+          <div><strong>Date</strong> April 11, 2026</div>
+          <div><strong>Customer</strong> VT Food Pantry</div>
+          <div><strong>Terms</strong> Net 30</div>
+        </div>
+      </section>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Description</th>
+            <th>Category</th>
+            <th>Qty</th>
+            <th>Unit</th>
+            <th>Weight</th>
+            <th>Price</th>
+            <th>Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>White Rice</td>
+            <td>Grains</td>
+            <td class="num">18</td>
+            <td>bags</td>
+            <td>5 lbs</td>
+            <td class="num">$6.99</td>
+            <td class="num">$125.82</td>
+          </tr>
+          <tr>
+            <td>Black Beans</td>
+            <td>Canned Goods</td>
+            <td class="num">36</td>
+            <td>cans</td>
+            <td>15 oz</td>
+            <td class="num">$1.29</td>
+            <td class="num">$46.44</td>
+          </tr>
+          <tr>
+            <td>Peanut Butter</td>
+            <td>Protein</td>
+            <td class="num">12</td>
+            <td>jars</td>
+            <td>28 oz</td>
+            <td class="num">$3.99</td>
+            <td class="num">$47.88</td>
+          </tr>
+          <tr>
+            <td>Apple Juice</td>
+            <td>Beverages</td>
+            <td class="num">20</td>
+            <td>bottles</td>
+            <td>64 oz</td>
+            <td class="num">$2.49</td>
+            <td class="num">$49.80</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <section class="summary">
+        <div class="summary-card">
+          <div class="summary-row"><span>Subtotal</span><span>$269.94</span></div>
+          <div class="summary-row"><span>Tax</span><span>$0.00</span></div>
+          <div class="summary-row"><span>Total Due</span><span>$269.94</span></div>
+        </div>
+      </section>
+
+      <section class="notes">
+        <div class="badge">Delivery Notes</div>
+        <div class="subtle">
+          Delivery for pantry intake processing. Recommended default allocation: Pantry program. Contact vendor support within 48 hours for shortage claims.
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
