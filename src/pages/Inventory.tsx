@@ -43,10 +43,15 @@ const emptyItem: InventoryInput = {
 };
 
 const emptyRestock = {
- pantry: 0,
- grocery: 0,
+ addPantry: 0,
+ addGrocery: 0,
+ removePantry: 0,
+ removeGrocery: 0,
+ removeReason: 'Distributed',
  notes: '',
 };
+
+const removalReasonOptions = ['Distributed', 'Damaged', 'Expired', 'Count Correction', 'Other'];
 
 export default function Inventory() {
  const [items, setItems] = useState<InventoryItem[]>([]);
@@ -137,14 +142,22 @@ export default function Inventory() {
  setIsSaving(true);
  setStatusMessage('');
 
- const pantryDelta = Number(restock.pantry || 0);
- const groceryDelta = Number(restock.grocery || 0);
- const nextPantryQty = Number(editItem.pantry_quantity || 0) + pantryDelta;
- const nextGroceryQty = Number(editItem.grocery_quantity || 0) + groceryDelta;
+ const pantryIncrease = Number(restock.addPantry || 0);
+ const groceryIncrease = Number(restock.addGrocery || 0);
+ const pantryDecrease = Number(restock.removePantry || 0);
+ const groceryDecrease = Number(restock.removeGrocery || 0);
+ const nextPantryQty = Number(editItem.pantry_quantity || 0) + pantryIncrease - pantryDecrease;
+ const nextGroceryQty = Number(editItem.grocery_quantity || 0) + groceryIncrease - groceryDecrease;
 
  if (nextPantryQty < 0 || nextGroceryQty < 0) {
  setIsSaving(false);
- setStatusMessage('Restock adjustment would make inventory negative.');
+ setStatusMessage('This change would make inventory go below zero.');
+ return;
+ }
+
+ if ((pantryDecrease > 0 || groceryDecrease > 0) && !restock.removeReason.trim()) {
+ setIsSaving(false);
+ setStatusMessage('Choose a reason for removing stock.');
  return;
  }
 
@@ -173,17 +186,29 @@ export default function Inventory() {
  threshold: Number(editItem.low_stock_threshold ?? 10),
  });
 
- if (pantryDelta !== 0 || groceryDelta !== 0) {
- const totalDelta = pantryDelta + groceryDelta;
+ if (pantryIncrease !== 0 || groceryIncrease !== 0) {
+ const totalAdded = pantryIncrease + groceryIncrease;
  await addDoc(collection(db, 'transactions'), {
  item_id: selectedItem.id,
  type: 'add',
- quantity: totalDelta,
- from_program: totalDelta < 0 ? 'inventory' : undefined,
- to_program: totalDelta >= 0 ? 'inventory' : undefined,
+ quantity: totalAdded,
+ to_program: 'inventory',
  vendor: editItem.vendor?.trim() || selectedItem.vendor || undefined,
  timestamp: new Date().toISOString(),
- notes: restock.notes || `Restock update: pantry ${pantryDelta}, grocery ${groceryDelta}`,
+ notes: restock.notes || `Added stock: pantry ${pantryIncrease}, grocery ${groceryIncrease}`,
+ });
+ }
+
+ if (pantryDecrease !== 0 || groceryDecrease !== 0) {
+ const totalRemoved = pantryDecrease + groceryDecrease;
+ await addDoc(collection(db, 'transactions'), {
+ item_id: selectedItem.id,
+ type: 'remove',
+ quantity: totalRemoved,
+ from_program: 'inventory',
+ vendor: editItem.vendor?.trim() || selectedItem.vendor || undefined,
+ timestamp: new Date().toISOString(),
+ notes: `${restock.removeReason}${restock.notes ? ` // ${restock.notes}` : ''} // Removed stock: pantry ${pantryDecrease}, grocery ${groceryDecrease}`,
  });
  }
 
@@ -264,7 +289,6 @@ export default function Inventory() {
  </p>
  </div>
 
- <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.3fr)_minmax(360px,0.8fr)] gap-10 items-start">
  <div className="bg-vt-cream border-4 border-vt-ink shadow-[12px_12px_0px_0px_#1A1516] overflow-hidden">
  <div className="overflow-x-auto">
  <table className="w-full text-left border-collapse">
@@ -330,156 +354,6 @@ export default function Inventory() {
  </tbody>
  </table>
  </div>
- </div>
-
- <aside className="bg-vt-cream border-4 border-vt-ink p-8 shadow-[12px_12px_0px_0px_#861F41]">
- {!selectedItem ? (
- <div className="min-h-[420px] flex flex-col items-center justify-center text-center border-4 border-dashed border-vt-ink p-8 bg-vt-orange/10">
- <Boxes size={56} className="text-vt-maroon mb-5" />
- <h2 className="font-serif text-3xl font-bold text-vt-ink uppercase mb-3">Choose An Item</h2>
- <p className="font-sans text-gray-600 max-w-sm">
- Choose an item from the table to update its details, adjust stock, or change when it should show as low stock.
- </p>
- </div>
- ) : (
- <form onSubmit={handleSaveItem} className="space-y-8">
- <div className="border-b-4 border-vt-ink pb-4">
- <div className="inline-flex items-center gap-3 bg-vt-ink text-vt-cream border-4 border-vt-ink px-4 py-2 shadow-[4px_4px_0px_0px_#E87722] mb-5">
- <PencilLine size={20} />
- <span className="font-mono font-bold uppercase tracking-widest text-sm">Edit + Restock</span>
- </div>
- <h2 className="font-serif text-3xl font-bold text-vt-ink uppercase">{selectedItem.name}</h2>
- <p className="font-mono text-sm text-gray-500 uppercase tracking-widest mt-2">Update details and stock levels</p>
- </div>
-
- <div className="border-4 border-vt-ink bg-vt-orange/10 p-4">
- <p className="font-sans text-sm text-vt-ink">
- Change item details here, then use <span className="font-bold">Pantry Delta</span> or <span className="font-bold">Grocery Delta</span> only when stock actually changed.
- </p>
- </div>
-
- <div>
- <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Item Name</label>
- <input required type="text" value={editItem.name} onChange={e => setEditItem({ ...editItem, name: e.target.value })} className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-sans text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all" />
- </div>
-
- <div>
- <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Category</label>
- <select value={editItem.category} onChange={e => setEditItem({ ...editItem, category: e.target.value })} className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-sans text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all">
- {categoryOptions.map((option) => <option key={option} value={option}>{option}</option>)}
- </select>
- </div>
-
- <div>
- <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Unit</label>
- <select value={editItem.unit} onChange={e => setEditItem({ ...editItem, unit: e.target.value })} className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-sans text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all">
- {unitOptions.map((option) => <option key={option} value={option}>{option}</option>)}
- </select>
- </div>
-
- <div>
- <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Vendor</label>
- <input list="inventory-vendors" type="text" value={editItem.vendor || ''} onChange={e => setEditItem({ ...editItem, vendor: e.target.value })} placeholder="Costco, Kroger, Food Bank..." className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-sans text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all" />
- </div>
-
- <div className="grid grid-cols-2 gap-5">
- <div>
- <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Item Weight</label>
- <input type="number" min="0" step="0.01" value={editItem.weight_value ?? ''} onChange={e => setEditItem({ ...editItem, weight_value: e.target.value ? Number(e.target.value) : undefined })} placeholder="Optional" className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-mono text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all" />
- </div>
- <div>
- <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Weight Unit</label>
- <select value={editItem.weight_unit || 'lbs'} onChange={e => setEditItem({ ...editItem, weight_unit: e.target.value as InventoryInput['weight_unit'] })} className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-sans text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all">
- {weightUnitOptions.map((option) => <option key={option} value={option}>{option}</option>)}
- </select>
- </div>
- </div>
-
- <div className="grid grid-cols-2 gap-5">
- <div>
- <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Price</label>
- <input type="number" min="0" step="0.01" value={editItem.unit_price ?? ''} onChange={e => setEditItem({ ...editItem, unit_price: e.target.value ? Number(e.target.value) : undefined })} placeholder="Optional" className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-mono text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all" />
- </div>
- <div>
- <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Price Type</label>
- <select value={editItem.price_basis || 'per_unit'} onChange={e => setEditItem({ ...editItem, price_basis: e.target.value as InventoryInput['price_basis'] })} className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-sans text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all">
- {priceBasisOptions.map((option) => <option key={option} value={option}>{option === 'per_weight' ? 'Per Weight' : 'Per Unit'}</option>)}
- </select>
- </div>
- </div>
-
- <div>
- <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Alert When Total Stock Falls Below</label>
- <select value={editItem.low_stock_threshold ?? 10} onChange={e => setEditItem({ ...editItem, low_stock_threshold: Number(e.target.value) })} className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-sans text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all">
- {thresholdOptions.map((option) => <option key={option} value={option}>{option}</option>)}
- </select>
- <p className="font-sans text-sm text-gray-600 mt-2">The dashboard notice clears automatically after stock is replenished.</p>
- </div>
-
- <div className="grid grid-cols-2 gap-5">
- <div>
- <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Current Pantry Stock</label>
- <input type="number" min="0" value={editItem.pantry_quantity} onChange={e => setEditItem({ ...editItem, pantry_quantity: Number(e.target.value) })} className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-mono text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all" />
- </div>
- <div>
- <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Current Grocery Stock</label>
- <input type="number" min="0" value={editItem.grocery_quantity} onChange={e => setEditItem({ ...editItem, grocery_quantity: Number(e.target.value) })} className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-mono text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all" />
- </div>
- </div>
-
- <div className="border-4 border-vt-ink p-6 bg-vt-orange/10 space-y-5">
- <div>
- <h3 className="font-serif text-2xl font-bold text-vt-ink uppercase">Adjust Stock</h3>
- <p className="font-sans text-gray-600 mt-1">Use positive numbers to add stock. Use negative numbers only when fixing a count.</p>
- </div>
- <div className="grid grid-cols-2 gap-5">
- <div>
- <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Pantry Delta</label>
- <input type="number" value={restock.pantry} onChange={e => setRestock({ ...restock, pantry: Number(e.target.value) })} className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-mono text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all" />
- </div>
- <div>
- <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Grocery Delta</label>
- <input type="number" value={restock.grocery} onChange={e => setRestock({ ...restock, grocery: Number(e.target.value) })} className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-mono text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all" />
- </div>
- </div>
- <div>
- <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Notes</label>
- <textarea value={restock.notes} onChange={e => setRestock({ ...restock, notes: e.target.value })} rows={3} placeholder="Delivery arrived, shelf recount, volunteer correction..." className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-sans text-base text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all resize-none" />
- </div>
- </div>
-
- <div className="border-4 border-vt-ink p-5 bg-vt-ink text-vt-cream">
- <p className="font-mono text-xs font-bold uppercase tracking-widest mb-3">New Totals After Save</p>
- <div className="grid grid-cols-2 gap-4">
- <div>
- <p className="font-mono text-sm uppercase text-vt-orange">Pantry</p>
- <p className="font-mono text-3xl font-bold">{Number(editItem.pantry_quantity || 0) + Number(restock.pantry || 0)}</p>
- </div>
- <div>
- <p className="font-mono text-sm uppercase text-vt-orange">Grocery</p>
- <p className="font-mono text-3xl font-bold">{Number(editItem.grocery_quantity || 0) + Number(restock.grocery || 0)}</p>
- </div>
- </div>
- </div>
-
- {statusMessage ? (
- <div className={`border-4 border-vt-ink px-4 py-3 shadow-[4px_4px_0px_0px_#1A1516] ${statusMessage.includes('Failed') || statusMessage.includes('negative') ? 'bg-red-200 text-vt-ink' : 'bg-green-300 text-vt-ink'}`}>
- <div className="flex items-start gap-3">
- <CheckCircle2 size={18} className="mt-0.5" />
- <p className="font-sans text-sm font-medium">{statusMessage}</p>
- </div>
- </div>
- ) : null}
-
- <div className="flex justify-end gap-4 border-t-4 border-vt-ink pt-6">
- <button type="button" onClick={() => setSelectedItem(null)} className="px-6 py-4 font-mono font-bold uppercase text-vt-ink border-4 border-vt-ink hover:bg-vt-ink hover:text-vt-cream transition-colors">Close</button>
- <button disabled={isSaving} type="submit" className="bg-vt-orange text-vt-ink border-4 border-vt-ink px-8 py-4 font-mono font-bold uppercase hover:bg-vt-orange-dark hover:-translate-y-1 shadow-[6px_6px_0px_0px_#1A1516] transition-all disabled:opacity-60 disabled:hover:translate-y-0">
- {isSaving ? 'Saving...' : 'Save Changes'}
- </button>
- </div>
- </form>
- )}
- </aside>
  </div>
 
  </div>
@@ -575,6 +449,184 @@ export default function Inventory() {
  <div className="md:col-span-2 flex justify-end gap-6 mt-2 border-t-4 border-vt-ink pt-8">
  <button type="button" onClick={() => setIsAdding(false)} className="px-8 py-4 font-mono font-bold uppercase text-vt-ink border-4 border-vt-ink hover:bg-vt-ink hover:text-vt-cream transition-colors">Abort</button>
  <button type="submit" className="bg-vt-orange text-vt-ink border-4 border-vt-ink px-10 py-4 font-mono font-bold uppercase hover:bg-vt-orange-dark hover:-translate-y-1 shadow-[6px_6px_0px_0px_#1A1516] transition-all">Commit Record</button>
+ </div>
+ </form>
+ </div>
+ </div>
+ )}
+ {selectedItem && (
+ <div className="fixed inset-y-0 right-0 left-0 lg:left-72 z-50 flex items-center justify-center p-4 md:p-8">
+ <button
+ type="button"
+ aria-label="Close edit item modal"
+ onClick={() => setSelectedItem(null)}
+ className="absolute inset-0 bg-vt-ink/55 backdrop-blur-[2px]"
+ />
+ <div className="relative w-full max-w-4xl max-h-[90vh] overflow-y-auto bg-vt-cream border-4 border-vt-ink shadow-[16px_16px_0px_0px_#1A1516]">
+ <div className="sticky top-0 bg-vt-ink text-vt-cream border-b-4 border-vt-ink px-6 py-5 flex items-center justify-between gap-4">
+ <div>
+ <div className="inline-flex items-center gap-3 bg-vt-ink text-vt-cream border-4 border-vt-cream px-4 py-2 shadow-[4px_4px_0px_0px_#E87722] mb-5">
+ <PencilLine size={20} />
+ <span className="font-mono font-bold uppercase tracking-widest text-sm">Edit + Stock Update</span>
+ </div>
+ <h2 className="font-serif text-3xl font-bold uppercase">{selectedItem.name}</h2>
+ <p className="font-mono text-sm uppercase tracking-widest mt-2 opacity-80">Update details and stock levels</p>
+ </div>
+ <button
+ type="button"
+ onClick={() => setSelectedItem(null)}
+ className="border-4 border-vt-cream px-4 py-2 font-mono font-bold uppercase hover:bg-vt-cream hover:text-vt-ink transition-colors"
+ >
+ Close
+ </button>
+ </div>
+
+ <form onSubmit={handleSaveItem} className="p-8 md:p-10 space-y-8">
+ <div className="border-4 border-vt-ink bg-vt-orange/10 p-4">
+ <p className="font-sans text-sm text-vt-ink">
+ Change item details here, then use the stock sections below to add or remove units. If stock is removed, choose why.
+ </p>
+ </div>
+
+ <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+ <div>
+ <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Item Name</label>
+ <input required type="text" value={editItem.name} onChange={e => setEditItem({ ...editItem, name: e.target.value })} className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-sans text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all" />
+ </div>
+
+ <div>
+ <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Category</label>
+ <select value={editItem.category} onChange={e => setEditItem({ ...editItem, category: e.target.value })} className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-sans text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all">
+ {categoryOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+ </select>
+ </div>
+
+ <div>
+ <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Unit</label>
+ <select value={editItem.unit} onChange={e => setEditItem({ ...editItem, unit: e.target.value })} className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-sans text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all">
+ {unitOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+ </select>
+ </div>
+
+ <div>
+ <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Vendor</label>
+ <input list="inventory-vendors" type="text" value={editItem.vendor || ''} onChange={e => setEditItem({ ...editItem, vendor: e.target.value })} placeholder="Costco, Kroger, Food Bank..." className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-sans text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all" />
+ </div>
+
+ <div>
+ <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Item Weight</label>
+ <input type="number" min="0" step="0.01" value={editItem.weight_value ?? ''} onChange={e => setEditItem({ ...editItem, weight_value: e.target.value ? Number(e.target.value) : undefined })} placeholder="Optional" className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-mono text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all" />
+ </div>
+
+ <div>
+ <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Weight Unit</label>
+ <select value={editItem.weight_unit || 'lbs'} onChange={e => setEditItem({ ...editItem, weight_unit: e.target.value as InventoryInput['weight_unit'] })} className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-sans text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all">
+ {weightUnitOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+ </select>
+ </div>
+
+ <div>
+ <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Price</label>
+ <input type="number" min="0" step="0.01" value={editItem.unit_price ?? ''} onChange={e => setEditItem({ ...editItem, unit_price: e.target.value ? Number(e.target.value) : undefined })} placeholder="Optional" className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-mono text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all" />
+ </div>
+
+ <div>
+ <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Price Type</label>
+ <select value={editItem.price_basis || 'per_unit'} onChange={e => setEditItem({ ...editItem, price_basis: e.target.value as InventoryInput['price_basis'] })} className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-sans text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all">
+ {priceBasisOptions.map((option) => <option key={option} value={option}>{option === 'per_weight' ? 'Per Weight' : 'Per Unit'}</option>)}
+ </select>
+ </div>
+
+ <div className="md:col-span-2">
+ <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Alert When Total Stock Falls Below</label>
+ <select value={editItem.low_stock_threshold ?? 10} onChange={e => setEditItem({ ...editItem, low_stock_threshold: Number(e.target.value) })} className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-sans text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all">
+ {thresholdOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+ </select>
+ <p className="font-sans text-sm text-gray-600 mt-2">The dashboard notice clears automatically after stock is replenished.</p>
+ </div>
+
+ <div>
+ <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Current Pantry Stock</label>
+ <input type="number" min="0" value={editItem.pantry_quantity} onChange={e => setEditItem({ ...editItem, pantry_quantity: Number(e.target.value) })} className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-mono text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all" />
+ </div>
+ <div>
+ <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Current Grocery Stock</label>
+ <input type="number" min="0" value={editItem.grocery_quantity} onChange={e => setEditItem({ ...editItem, grocery_quantity: Number(e.target.value) })} className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-mono text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all" />
+ </div>
+ </div>
+
+ <div className="border-4 border-vt-ink p-6 bg-green-100/60 space-y-5">
+ <div>
+ <h3 className="font-serif text-2xl font-bold text-vt-ink uppercase">Add Stock</h3>
+ <p className="font-sans text-gray-600 mt-1">Use this when more of this item arrives and should be added to inventory.</p>
+ </div>
+ <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+ <div>
+ <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Add To Pantry</label>
+ <input type="number" min="0" value={restock.addPantry} onChange={e => setRestock({ ...restock, addPantry: Number(e.target.value) })} className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-mono text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all" />
+ </div>
+ <div>
+ <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Add To Grocery</label>
+ <input type="number" min="0" value={restock.addGrocery} onChange={e => setRestock({ ...restock, addGrocery: Number(e.target.value) })} className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-mono text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all" />
+ </div>
+ </div>
+ </div>
+
+ <div className="border-4 border-vt-ink p-6 bg-red-100/70 space-y-5">
+ <div>
+ <h3 className="font-serif text-2xl font-bold text-vt-ink uppercase">Remove Stock</h3>
+ <p className="font-sans text-gray-600 mt-1">Use this when food was distributed, damaged, expired, or counted down during a correction.</p>
+ </div>
+ <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+ <div>
+ <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Remove From Pantry</label>
+ <input type="number" min="0" value={restock.removePantry} onChange={e => setRestock({ ...restock, removePantry: Number(e.target.value) })} className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-mono text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all" />
+ </div>
+ <div>
+ <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Remove From Grocery</label>
+ <input type="number" min="0" value={restock.removeGrocery} onChange={e => setRestock({ ...restock, removeGrocery: Number(e.target.value) })} className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-mono text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all" />
+ </div>
+ </div>
+ <div>
+ <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Why Is Stock Going Down?</label>
+ <select value={restock.removeReason} onChange={e => setRestock({ ...restock, removeReason: e.target.value })} className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-sans text-xl text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all">
+ {removalReasonOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+ </select>
+ </div>
+ <div>
+ <label className="block font-mono text-sm font-bold uppercase tracking-widest text-vt-ink mb-3">Notes</label>
+ <textarea value={restock.notes} onChange={e => setRestock({ ...restock, notes: e.target.value })} rows={3} placeholder="Optional extra detail: weekly pantry distribution, damaged case, shelf recount..." className="w-full bg-vt-cream border-4 border-vt-ink p-4 font-sans text-base text-vt-ink focus:outline-none focus:ring-4 focus:ring-vt-orange transition-all resize-none" />
+ </div>
+ </div>
+
+ <div className="border-4 border-vt-ink p-5 bg-vt-ink text-vt-cream">
+ <p className="font-mono text-xs font-bold uppercase tracking-widest mb-3">New Totals After Save</p>
+ <div className="grid grid-cols-2 gap-4">
+ <div>
+ <p className="font-mono text-sm uppercase text-vt-orange">Pantry</p>
+ <p className="font-mono text-3xl font-bold">{Number(editItem.pantry_quantity || 0) + Number(restock.addPantry || 0) - Number(restock.removePantry || 0)}</p>
+ </div>
+ <div>
+ <p className="font-mono text-sm uppercase text-vt-orange">Grocery</p>
+ <p className="font-mono text-3xl font-bold">{Number(editItem.grocery_quantity || 0) + Number(restock.addGrocery || 0) - Number(restock.removeGrocery || 0)}</p>
+ </div>
+ </div>
+ </div>
+
+ {statusMessage ? (
+ <div className={`border-4 border-vt-ink px-4 py-3 shadow-[4px_4px_0px_0px_#1A1516] ${statusMessage.includes('Failed') || statusMessage.includes('below zero') ? 'bg-red-200 text-vt-ink' : 'bg-green-300 text-vt-ink'}`}>
+ <div className="flex items-start gap-3">
+ <CheckCircle2 size={18} className="mt-0.5" />
+ <p className="font-sans text-sm font-medium">{statusMessage}</p>
+ </div>
+ </div>
+ ) : null}
+
+ <div className="flex justify-end gap-4 border-t-4 border-vt-ink pt-6">
+ <button type="button" onClick={() => setSelectedItem(null)} className="px-6 py-4 font-mono font-bold uppercase text-vt-ink border-4 border-vt-ink hover:bg-vt-ink hover:text-vt-cream transition-colors">Close</button>
+ <button disabled={isSaving} type="submit" className="bg-vt-orange text-vt-ink border-4 border-vt-ink px-8 py-4 font-mono font-bold uppercase hover:bg-vt-orange-dark hover:-translate-y-1 shadow-[6px_6px_0px_0px_#1A1516] transition-all disabled:opacity-60 disabled:hover:translate-y-0">
+ {isSaving ? 'Saving...' : 'Save Changes'}
+ </button>
  </div>
  </form>
  </div>

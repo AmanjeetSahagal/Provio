@@ -72,18 +72,21 @@ export default function Dashboard() {
  <div className={`p-4 border-2 border-vt-ink ${
  tx.type === 'transfer' ? 'bg-vt-orange text-vt-ink' :
  tx.type === 'add' ? 'bg-green-400 text-vt-ink' :
+ tx.type === 'remove' ? 'bg-red-300 text-vt-ink' :
  'bg-gray-300 text-vt-ink'
  }`}>
  {tx.type === 'transfer' ? <ArrowRightLeft size={24} /> : <TrendingUp size={24} />}
  </div>
  <div>
  <p className="font-sans text-xl font-bold text-vt-ink uppercase">
- {tx.type === 'rollover' ? 'year-end rollover' : tx.type} <span className="font-mono text-vt-maroon ">[{tx.quantity} units]</span>
+ {tx.type === 'rollover' ? 'year-end rollover' : tx.type === 'remove' ? 'stock removed' : tx.type} <span className="font-mono text-vt-maroon ">[{tx.quantity} units]</span>
  </p>
  <p className="font-mono text-sm text-gray-600 mt-1 uppercase">
  {tx.vendor ? `Vendor: ${tx.vendor} // ` : ''}
  {tx.type === 'transfer'
  ? `Path: ${tx.from_program} -> ${tx.to_program}`
+ : tx.type === 'remove'
+ ? tx.notes || 'Inventory reduced'
  : tx.type === 'rollover'
  ? tx.notes || 'Carry-forward baseline recorded'
  : `Dest: ${tx.to_program || 'inventory'}`}

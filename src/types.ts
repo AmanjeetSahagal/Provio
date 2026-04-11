@@ -32,7 +32,7 @@ export type ParsedInventoryItem = {
 export type TransactionRecord = {
   id: string;
   item_id: string;
-  type: 'add' | 'transfer' | 'invoice' | 'rollover';
+  type: 'add' | 'remove' | 'transfer' | 'invoice' | 'rollover';
   quantity: number;
   timestamp: string;
   from_program?: string;
